@@ -14,8 +14,9 @@ abrir Noir Player.
 - Conserva la selección después de cerrar y abrir Noir Player.
 - Permite restaurar el color predeterminado (`#39A7FF`).
 
-La configuración aparece en **Settings → Plugin manager → Change Slider Color**
-después de instalar y habilitar el plugin.
+La configuración aparece en el panel normal **Settings**, en la sección
+**Slider color**, después de instalar, habilitar y reiniciar Noir Player. La
+tarjeta **Plugin manager** solo controla instalación, permisos y activación.
 
 ## Capabilities
 
@@ -48,9 +49,10 @@ Plyr); no se accede ni se modifica el elemento de video.
 3. Abre el repositorio y selecciona **Change Slider Color**.
 4. Revisa y concede `ui.contribute`, `storage` y `unsafe.dom`; confirma el
    riesgo `unsafe.dom` cuando Noir Player lo solicite.
-5. Instala, habilita el plugin y reinicia Noir Player si el administrador lo
-   solicita.
-6. Abre **Settings** para elegir el color.
+5. Instala, habilita el plugin y reinicia Noir Player. Los plugins de GitHub y
+   sus cambios de permisos se aplican al reiniciar.
+6. Cierra **Plugin manager**, abre el panel normal **Settings** y busca
+   **Slider color** para elegir el color.
 
 ## Desarrollo
 
