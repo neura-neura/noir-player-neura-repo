@@ -57,6 +57,15 @@ describe('Change Slider Color Noir Player plugin', () => {
     );
   });
 
+  it('keeps the generated WebView bundle independent of Node globals', async () => {
+    const bundle = await readFile(
+      path.join(process.cwd(), 'dist/index.js'),
+      'utf8',
+    );
+
+    expect(bundle).not.toContain('process.env.NODE_ENV');
+  });
+
   it('exposes a persistent color API and a settings UI contribution', async () => {
     const stored = new Map<string, unknown>();
     const contributions: Array<{ id: string }> = [];

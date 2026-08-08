@@ -55,6 +55,12 @@ for (const descriptorRelativePath of descriptorPaths) {
   await build({
     configFile: false,
     root: pluginRoot,
+    // GitHub plugins execute directly in Noir Player's WebView, where Node's
+    // `process` global does not exist. React's production build is browser-safe
+    // and keeps the published bundle independent of Node-only globals.
+    define: {
+      'process.env.NODE_ENV': JSON.stringify('production'),
+    },
     build: {
       emptyOutDir: true,
       outDir: 'dist',
