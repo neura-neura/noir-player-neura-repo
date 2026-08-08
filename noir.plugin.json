@@ -1,0 +1,22 @@
+{
+  "manifest": {
+    "id": "example.blank",
+    "name": "Blank Noir Player plugin",
+    "version": "0.1.0",
+    "apiVersion": "^1.0.0",
+    "appVersion": ">=0.1.0 <1.0.0",
+    "description": "A minimal, self-contained Noir Player plugin starter.",
+    "license": "MIT",
+    "authors": [
+      "Your name"
+    ],
+    "repository": "https://github.com/neura-neura/noir-player-plugin-template",
+    "platforms": [
+      "windows",
+      "browser-preview"
+    ],
+    "requestedCapabilities": []
+  },
+  "entry": "dist/index.js",
+  "integrity": "sha256:44b0e4ea11feaaa900d735fa801801c0318573f5457447f3ae33c2410570ff08"
+}
