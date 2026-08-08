@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "name": "neura's Noir Player plugins",
+  "description": "Noir Player plugins maintained by neura-neura.",
+  "plugins": [
+    {
+      "descriptor": "noir.plugin.json"
+    }
+  ]
+}

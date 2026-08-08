@@ -1,0 +1,26 @@
+{
+  "name": "noir-player-neura-repo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Noir Player plugins maintained by neura-neura.",
+  "scripts": {
+    "check": "npm run typecheck && npm test && npm run build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "npm run build:plugins",
+    "build:plugins": "node scripts/build-plugins.mjs",
+    "create-plugin": "node scripts/create-plugin.mjs"
+  },
+  "dependencies": {
+    "@noir-player/plugin-api": "file:vendor/noir-player-plugin-api",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/node": "^20.17.0",
+    "typescript": "^5.6.3",
+    "vite": "8.2.1",
+    "vitest": "4.1.10"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "manifest": {
+    "id": "namespace.change-slider-color",
+    "name": "Change Slider Color",
+    "version": "0.1.0",
+    "apiVersion": "^1.0.0",
+    "appVersion": ">=0.1.0 <1.0.0",
+    "description": "Customize the Noir Player playback and volume slider color with a persistent color picker or hexadecimal value.",
+    "license": "MIT",
+    "authors": [
+      "neura-neura"
+    ],
+    "repository": "https://github.com/neura-neura/noir-player-neura-repo",
+    "platforms": [
+      "windows",
+      "browser-preview"
+    ],
+    "requestedCapabilities": [
+      "ui.contribute",
+      "storage",
+      "unsafe.dom"
+    ]
+  },
+  "entry": "dist/index.js",
+  "integrity": "sha256:c01394381ac6f54644079ba49f4f90ee1cc1457e651bf20d717332d1e85151c6"
+}
