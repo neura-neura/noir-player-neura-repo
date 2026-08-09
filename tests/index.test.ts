@@ -51,6 +51,9 @@ describe('Change Slider Color Noir Player plugin', () => {
     expect(css).toContain('.native-volume');
     expect(css).toContain('.plyr .plyr__progress input[type=\'range\']');
     expect(css).toContain('.plyr .plyr__volume input[type=\'range\']');
+    expect(css).toContain('input.native-progress::-webkit-slider-thumb');
+    expect(css).toContain('input.native-volume::-webkit-slider-thumb');
+    expect(css).toContain('input.native-progress::-moz-range-thumb');
     expect(css).toContain('#123456');
     expect(() => buildSliderColorStyles('#12345')).toThrow(
       'valid hexadecimal slider color',

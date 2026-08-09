@@ -297,8 +297,8 @@ export function buildSliderColorStyles(input: unknown): string {
   accent-color: ${color} !important;
 }
 
-.native-progress::-webkit-slider-runnable-track,
-.native-volume::-webkit-slider-runnable-track {
+input.native-progress::-webkit-slider-runnable-track,
+input.native-volume::-webkit-slider-runnable-track {
   background: linear-gradient(
     90deg,
     ${color} 0 var(--range-progress, 0%),
@@ -306,13 +306,40 @@ export function buildSliderColorStyles(input: unknown): string {
   ) !important;
 }
 
-.native-progress::-moz-range-progress,
-.native-volume::-moz-range-progress,
-.native-progress::-webkit-slider-thumb,
-.native-volume::-webkit-slider-thumb,
-.native-progress::-moz-range-thumb,
-.native-volume::-moz-range-thumb {
+/* Keep WebKit and Mozilla pseudo-elements in separate rules. Chromium
+   discards a selector list when it contains an unsupported pseudo-element. */
+input.native-progress::-webkit-slider-thumb,
+input.native-volume::-webkit-slider-thumb {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  width: 16px !important;
+  height: 16px !important;
+  margin-top: -6px !important;
+  border: 2px solid #0d1017 !important;
+  border-radius: 50% !important;
   background: ${color} !important;
+  background-color: ${color} !important;
+  box-shadow:
+    0 0 0 2px ${color}66,
+    0 3px 8px rgba(0, 0, 0, 0.34) !important;
+}
+
+input.native-progress::-moz-range-progress,
+input.native-volume::-moz-range-progress {
+  background: ${color} !important;
+}
+
+input.native-progress::-moz-range-thumb,
+input.native-volume::-moz-range-thumb {
+  width: 16px !important;
+  height: 16px !important;
+  border: 2px solid #0d1017 !important;
+  border-radius: 50% !important;
+  background: ${color} !important;
+  background-color: ${color} !important;
+  box-shadow:
+    0 0 0 2px ${color}66,
+    0 3px 8px rgba(0, 0, 0, 0.34) !important;
 }
 
 .plyr .plyr__progress input[type='range'],
@@ -327,10 +354,15 @@ export function buildSliderColorStyles(input: unknown): string {
 }
 
 .plyr .plyr__progress input[type='range']::-webkit-slider-thumb,
-.plyr .plyr__volume input[type='range']::-webkit-slider-thumb,
+.plyr .plyr__volume input[type='range']::-webkit-slider-thumb {
+  background: ${color} !important;
+  background-color: ${color} !important;
+}
+
 .plyr .plyr__progress input[type='range']::-moz-range-thumb,
 .plyr .plyr__volume input[type='range']::-moz-range-thumb {
   background: ${color} !important;
+  background-color: ${color} !important;
 }
 `;
 }
