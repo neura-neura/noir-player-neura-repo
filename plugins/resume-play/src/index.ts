@@ -85,6 +85,7 @@ interface PendingPlayBypass {
 }
 
 type StateListener = () => void;
+type UiRefresh = () => void;
 
 function isSourceKind(input: unknown): input is MediaSourceKind {
   return (
@@ -225,6 +226,7 @@ class ResumePlayController {
   private pendingPrompt: ResumePrompt | null = null;
   private bypassPrompt: PendingPlayBypass | null = null;
   private uiAvailable = false;
+  private uiRefresh: UiRefresh | null = null;
   private running = false;
   private disposed = false;
   private _state: ResumePlayState;
@@ -251,6 +253,10 @@ class ResumePlayController {
   setUiAvailable(available: boolean): void {
     this.uiAvailable = available;
     if (!available) this.setPendingPrompt(null);
+  }
+
+  setUiRefresh(refresh: UiRefresh | null): void {
+    this.uiRefresh = refresh;
   }
 
   start(): void {
@@ -512,10 +518,28 @@ class ResumePlayController {
         });
       }
     }
+
+    try {
+      this.uiRefresh?.();
+    } catch (error) {
+      this.context.logger.warn('A Resume Play UI refresh failed.', {
+        error: error instanceof Error ? error.message : 'unknown error',
+      });
+    }
   }
 
   private setPendingPrompt(prompt: ResumePrompt | null): void {
     if (this.disposed) return;
+    if (
+      this.pendingPrompt === prompt ||
+      (this.pendingPrompt !== null &&
+        prompt !== null &&
+        this.pendingPrompt.mediaKey === prompt.mediaKey &&
+        this.pendingPrompt.position === prompt.position &&
+        this.pendingPrompt.duration === prompt.duration)
+    ) {
+      return;
+    }
     this.pendingPrompt = prompt;
     this.emitState();
   }
@@ -532,8 +556,6 @@ class ResumePlayController {
     if (changed) {
       this.bypassPrompt = null;
       this.setPendingPrompt(null);
-    } else {
-      this.emitState();
     }
   }
 
@@ -799,19 +821,31 @@ const plugin = definePlugin<ResumePlayConfig, ResumePlayApi>({
     context.resources.add(() => controller.dispose());
 
     if (context.hasCapability('ui.contribute')) {
+      let promptDisposable: (() => void) | undefined;
+      const promptContribution = {
+        id: `${PLUGIN_ID}/prompt`,
+        slot: 'stage.info' as const,
+        order: 10,
+        ariaLabel: 'Resume Play',
+        component: (props: PluginSlotProps) =>
+          createElement(ResumePlayPrompt, { ...props, controller }),
+      } as UiContribution;
+      const refreshPromptContribution = () => {
+        promptDisposable?.();
+        promptDisposable = context.ui.contribute(promptContribution);
+      };
+
       try {
-        context.resources.add(
-          context.ui.contribute({
-            id: `${PLUGIN_ID}/prompt`,
-            slot: 'stage.info',
-            order: 10,
-            ariaLabel: 'Resume Play',
-            component: (props) =>
-              createElement(ResumePlayPrompt, { ...props, controller }),
-          } as UiContribution),
-        );
+        controller.setUiRefresh(refreshPromptContribution);
+        refreshPromptContribution();
+        context.resources.add(() => {
+          controller.setUiRefresh(null);
+          promptDisposable?.();
+          promptDisposable = undefined;
+        });
         controller.setUiAvailable(true);
       } catch (error) {
+        controller.setUiRefresh(null);
         context.logger.warn('Unable to register the Resume Play prompt.', {
           error: error instanceof Error ? error.message : 'unknown error',
         });

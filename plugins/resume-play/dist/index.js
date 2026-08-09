@@ -134,6 +134,7 @@ var g = class {
 	pendingPrompt = null;
 	bypassPrompt = null;
 	uiAvailable = !1;
+	uiRefresh = null;
 	running = !1;
 	disposed = !1;
 	_state;
@@ -148,6 +149,9 @@ var g = class {
 	}
 	setUiAvailable(e) {
 		this.uiAvailable = e, e || this.setPendingPrompt(null);
+	}
+	setUiRefresh(e) {
+		this.uiRefresh = e;
 	}
 	start() {
 		this.disposed || this.running || (this.running = !0, this.refreshSnapshot(), this.offerResumeIfAvailable());
@@ -276,14 +280,19 @@ var g = class {
 			} catch (e) {
 				this.context.logger.warn("A Resume Play UI listener failed.", { error: e instanceof Error ? e.message : "unknown error" });
 			}
+			try {
+				this.uiRefresh?.();
+			} catch (e) {
+				this.context.logger.warn("A Resume Play UI refresh failed.", { error: e instanceof Error ? e.message : "unknown error" });
+			}
 		}
 	}
 	setPendingPrompt(e) {
-		this.disposed || (this.pendingPrompt = e, this.emitState());
+		this.disposed || this.pendingPrompt === e || this.pendingPrompt !== null && e !== null && this.pendingPrompt.mediaKey === e.mediaKey && this.pendingPrompt.position === e.position && this.pendingPrompt.duration === e.duration || (this.pendingPrompt = e, this.emitState());
 	}
 	setActiveMedia(e) {
 		let t = !this.activeMedia || this.activeMedia.key !== e.key || this.activeMedia.sessionId !== null && e.sessionId !== null && this.activeMedia.sessionId !== e.sessionId;
-		this.activeMedia = Object.freeze(e), t ? (this.bypassPrompt = null, this.setPendingPrompt(null)) : this.emitState();
+		this.activeMedia = Object.freeze(e), t && (this.bypassPrompt = null, this.setPendingPrompt(null));
 	}
 	clearActiveMedia() {
 		!this.activeMedia && !this.pendingPrompt || (this.activeMedia = null, this.bypassPrompt = null, this.setPendingPrompt(null));
@@ -409,8 +418,8 @@ var v = r({
 	config: { parse: p },
 	setup(e, t) {
 		let r = new g(e, t);
-		if (e.resources.add(() => r.dispose()), e.hasCapability("ui.contribute")) try {
-			e.resources.add(e.ui.contribute({
+		if (e.resources.add(() => r.dispose()), e.hasCapability("ui.contribute")) {
+			let t, a = {
 				id: `${i}/prompt`,
 				slot: "stage.info",
 				order: 10,
@@ -419,9 +428,16 @@ var v = r({
 					...e,
 					controller: r
 				})
-			})), r.setUiAvailable(!0);
-		} catch (t) {
-			e.logger.warn("Unable to register the Resume Play prompt.", { error: t instanceof Error ? t.message : "unknown error" });
+			}, o = () => {
+				t?.(), t = e.ui.contribute(a);
+			};
+			try {
+				r.setUiRefresh(o), o(), e.resources.add(() => {
+					r.setUiRefresh(null), t?.(), t = void 0;
+				}), r.setUiAvailable(!0);
+			} catch (t) {
+				r.setUiRefresh(null), e.logger.warn("Unable to register the Resume Play prompt.", { error: t instanceof Error ? t.message : "unknown error" });
+			}
 		}
 		return e.hasCapability("player.read") && (e.resources.add(e.player.subscribe(() => {
 			try {
