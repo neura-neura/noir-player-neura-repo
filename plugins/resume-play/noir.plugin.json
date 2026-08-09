@@ -1,0 +1,27 @@
+{
+  "manifest": {
+    "id": "namespace.resume-play",
+    "name": "Resume Play",
+    "version": "0.1.0",
+    "apiVersion": "^1.0.0",
+    "appVersion": ">=0.1.0 <1.0.0",
+    "description": "Resume Play automatically remembers the exact point where you left off in each video. When you play it again, you can choose to resume from where you stopped or start over from the beginning, so you never lose your progress.",
+    "license": "MIT",
+    "authors": [
+      "neura-neura"
+    ],
+    "repository": "https://github.com/neura-neura/noir-player-neura-repo",
+    "platforms": [
+      "windows",
+      "browser-preview"
+    ],
+    "requestedCapabilities": [
+      "player.read",
+      "player.control",
+      "ui.contribute",
+      "storage"
+    ]
+  },
+  "entry": "dist/index.js",
+  "integrity": "sha256:e782af888c70107988dad2436408fdcdc0f1da39a8fee48e670f5fa9ca81d8ed"
+}

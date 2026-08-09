@@ -5,6 +5,9 @@
   "plugins": [
     {
       "descriptor": "noir.plugin.json"
+    },
+    {
+      "descriptor": "plugins/resume-play/noir.plugin.json"
     }
   ]
 }
