@@ -187,6 +187,7 @@ function parseStoredPositions(input: unknown): StoredResumePositions {
 function createPrompt(
   active: ActiveMedia,
   stored: StoredResumePosition | undefined,
+  options: { readonly allowPastPosition?: boolean } = {},
 ): ResumePrompt | null {
   if (!stored || stored.position < MIN_RESUME_SECONDS) return null;
 
@@ -200,7 +201,10 @@ function createPrompt(
     return null;
   }
 
-  if (stored.position <= active.currentTime + COMPLETION_EPSILON_SECONDS) {
+  if (
+    !options.allowPastPosition &&
+    stored.position <= active.currentTime + COMPLETION_EPSILON_SECONDS
+  ) {
     return null;
   }
 
@@ -224,6 +228,7 @@ class ResumePlayController {
   private config: ResumePlayConfig;
   private activeMedia: ActiveMedia | null = null;
   private pendingPrompt: ResumePrompt | null = null;
+  private resumeCandidate: StoredResumePosition | null = null;
   private bypassPrompt: PendingPlayBypass | null = null;
   private uiAvailable = false;
   private uiRefresh: UiRefresh | null = null;
@@ -252,7 +257,16 @@ class ResumePlayController {
 
   setUiAvailable(available: boolean): void {
     this.uiAvailable = available;
-    if (!available) this.setPendingPrompt(null);
+    if (!available) {
+      this.resumeCandidate = null;
+      this.setPendingPrompt(null);
+      return;
+    }
+
+    if (this.activeMedia && this.config.enabled && !this.resumeCandidate) {
+      this.resumeCandidate = this.positions[this.activeMedia.key] ?? null;
+    }
+    this.offerResumeIfAvailable();
   }
 
   setUiRefresh(refresh: UiRefresh | null): void {
@@ -277,8 +291,12 @@ class ResumePlayController {
     if (this.disposed) return;
     this.config = next;
     if (!next.enabled) {
+      this.resumeCandidate = null;
       this.setPendingPrompt(null);
       return;
+    }
+    if (this.activeMedia) {
+      this.resumeCandidate = this.positions[this.activeMedia.key] ?? null;
     }
     this.offerResumeIfAvailable();
     this.emitState();
@@ -306,7 +324,9 @@ class ResumePlayController {
     const prompt =
       this.pendingPrompt?.mediaKey === active.key
         ? this.pendingPrompt
-        : createPrompt(active, this.positions[active.key]);
+        : createPrompt(active, this.resumeCandidate ?? this.positions[active.key], {
+            allowPastPosition: this.resumeCandidate !== null,
+          });
     if (!prompt) return { decision: 'allow' };
 
     this.setPendingPrompt(prompt);
@@ -366,7 +386,12 @@ class ResumePlayController {
       duration: event.payload.duration ?? this.activeMedia.duration,
     });
 
-    if (this.pendingPrompt?.mediaKey === this.activeMedia.key) return;
+    if (
+      this.pendingPrompt?.mediaKey === this.activeMedia.key ||
+      this.resumeCandidate !== null
+    ) {
+      return;
+    }
     this.savePosition(event.payload.currentTime, event.payload.duration);
   }
 
@@ -376,7 +401,8 @@ class ResumePlayController {
       !this.running ||
       !this.activeMedia ||
       !this.matchesSession(event.sessionId) ||
-      this.pendingPrompt?.mediaKey === this.activeMedia.key
+      this.pendingPrompt?.mediaKey === this.activeMedia.key ||
+      this.resumeCandidate !== null
     ) {
       return;
     }
@@ -390,7 +416,8 @@ class ResumePlayController {
       !this.running ||
       !this.activeMedia ||
       !this.matchesSession(event.sessionId) ||
-      this.pendingPrompt?.mediaKey === this.activeMedia.key
+      this.pendingPrompt?.mediaKey === this.activeMedia.key ||
+      this.resumeCandidate !== null
     ) {
       return;
     }
@@ -412,6 +439,7 @@ class ResumePlayController {
     }
 
     this.removePosition(this.activeMedia.key);
+    this.resumeCandidate = null;
     this.setPendingPrompt(null);
   }
 
@@ -428,6 +456,7 @@ class ResumePlayController {
 
     if (snapshot.status === 'ended') {
       this.removePosition(active.key);
+      this.resumeCandidate = null;
       this.setPendingPrompt(null);
       return;
     }
@@ -442,6 +471,8 @@ class ResumePlayController {
     if (!this.canControl(prompt)) return false;
 
     this.setPendingPrompt(null);
+    const previousCandidate = this.resumeCandidate;
+    this.resumeCandidate = null;
     this.bypassPrompt = {
       mediaKey: prompt.mediaKey,
       sessionId: this.activeMedia?.sessionId ?? null,
@@ -455,6 +486,7 @@ class ResumePlayController {
       return true;
     } catch (error) {
       this.bypassPrompt = null;
+      this.resumeCandidate = previousCandidate;
       this.setPendingPrompt(prompt);
       this.logCommandFailure('resume', error);
       return false;
@@ -466,9 +498,11 @@ class ResumePlayController {
     if (!this.canControl(prompt)) return false;
 
     const previous = this.positions[prompt.mediaKey];
+    const previousCandidate = this.resumeCandidate;
     delete this.positions[prompt.mediaKey];
     this.persistPositions();
     this.setPendingPrompt(null);
+    this.resumeCandidate = null;
     this.bypassPrompt = {
       mediaKey: prompt.mediaKey,
       sessionId: this.activeMedia?.sessionId ?? null,
@@ -480,6 +514,7 @@ class ResumePlayController {
       return true;
     } catch (error) {
       this.bypassPrompt = null;
+      this.resumeCandidate = previousCandidate;
       if (previous) this.positions[prompt.mediaKey] = previous;
       this.persistPositions();
       this.setPendingPrompt(prompt);
@@ -492,6 +527,7 @@ class ResumePlayController {
     if (this.disposed) return;
     this.running = false;
     this.disposed = true;
+    this.resumeCandidate = null;
     this.bypassPrompt = null;
     this.pendingPrompt = null;
     this.listeners.clear();
@@ -555,6 +591,10 @@ class ResumePlayController {
     this.activeMedia = Object.freeze(active);
     if (changed) {
       this.bypassPrompt = null;
+      this.resumeCandidate =
+        this.config.enabled && this.uiAvailable
+          ? this.positions[active.key] ?? null
+          : null;
       this.setPendingPrompt(null);
     }
   }
@@ -562,6 +602,7 @@ class ResumePlayController {
   private clearActiveMedia(): void {
     if (!this.activeMedia && !this.pendingPrompt) return;
     this.activeMedia = null;
+    this.resumeCandidate = null;
     this.bypassPrompt = null;
     this.setPendingPrompt(null);
   }
@@ -614,10 +655,9 @@ class ResumePlayController {
       return;
     }
 
-    const prompt = createPrompt(
-      this.activeMedia,
-      this.positions[this.activeMedia.key],
-    );
+    const prompt = createPrompt(this.activeMedia, this.resumeCandidate ?? undefined, {
+      allowPastPosition: true,
+    });
     if (prompt) this.setPendingPrompt(prompt);
   }
 
@@ -779,7 +819,7 @@ function ResumePlayPrompt({
     createElement(
       'p',
       null,
-      `Continue “${prompt.displayName}” from ${formatResumeTime(prompt.position)}${percentage}?`,
+      `Continue "${prompt.displayName}" from ${formatResumeTime(prompt.position)}${percentage}?`,
     ),
     createElement(
       'div',

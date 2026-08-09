@@ -112,17 +112,17 @@ function m(e) {
 	}
 	return t;
 }
-function h(e, t) {
+function h(e, t, n = {}) {
 	if (!t || t.position < o) return null;
-	let n = e.duration ?? t.duration;
-	if (n !== null && (!Number.isFinite(n) || n <= 0 || t.position >= n - s) || t.position <= e.currentTime + s) return null;
-	let r = n !== null && n > 0 ? Math.min(100, Math.max(0, t.position / n * 100)) : null;
+	let r = e.duration ?? t.duration;
+	if (r !== null && (!Number.isFinite(r) || r <= 0 || t.position >= r - s) || !n.allowPastPosition && t.position <= e.currentTime + s) return null;
+	let i = r !== null && r > 0 ? Math.min(100, Math.max(0, t.position / r * 100)) : null;
 	return Object.freeze({
 		mediaKey: e.key,
 		displayName: e.displayName,
 		position: t.position,
-		duration: n,
-		percentage: r
+		duration: r,
+		percentage: i
 	});
 }
 var g = class {
@@ -132,6 +132,7 @@ var g = class {
 	config;
 	activeMedia = null;
 	pendingPrompt = null;
+	resumeCandidate = null;
 	bypassPrompt = null;
 	uiAvailable = !1;
 	uiRefresh = null;
@@ -148,7 +149,11 @@ var g = class {
 		return this.disposed ? () => void 0 : (this.listeners.add(e), () => this.listeners.delete(e));
 	}
 	setUiAvailable(e) {
-		this.uiAvailable = e, e || this.setPendingPrompt(null);
+		if (this.uiAvailable = e, !e) {
+			this.resumeCandidate = null, this.setPendingPrompt(null);
+			return;
+		}
+		this.activeMedia && this.config.enabled && !this.resumeCandidate && (this.resumeCandidate = this.positions[this.activeMedia.key] ?? null), this.offerResumeIfAvailable();
 	}
 	setUiRefresh(e) {
 		this.uiRefresh = e;
@@ -162,10 +167,10 @@ var g = class {
 	applyConfig(e) {
 		if (!this.disposed) {
 			if (this.config = e, !e.enabled) {
-				this.setPendingPrompt(null);
+				this.resumeCandidate = null, this.setPendingPrompt(null);
 				return;
 			}
-			this.offerResumeIfAvailable(), this.emitState();
+			this.activeMedia && (this.resumeCandidate = this.positions[this.activeMedia.key] ?? null), this.offerResumeIfAvailable(), this.emitState();
 		}
 	}
 	beforePlay(e) {
@@ -173,7 +178,7 @@ var g = class {
 		let t = this.activateFromSnapshot(e);
 		if (!t) return { decision: "allow" };
 		if (this.matchesBypass(t)) return this.bypassPrompt = null, { decision: "allow" };
-		let n = this.pendingPrompt?.mediaKey === t.key ? this.pendingPrompt : h(t, this.positions[t.key]);
+		let n = this.pendingPrompt?.mediaKey === t.key ? this.pendingPrompt : h(t, this.resumeCandidate ?? this.positions[t.key], { allowPastPosition: this.resumeCandidate !== null });
 		return n ? (this.setPendingPrompt(n), { decision: "cancel" }) : { decision: "allow" };
 	}
 	onOpening(e) {
@@ -206,19 +211,19 @@ var g = class {
 			...this.activeMedia,
 			currentTime: e.payload.currentTime,
 			duration: e.payload.duration ?? this.activeMedia.duration
-		}), this.pendingPrompt?.mediaKey !== this.activeMedia.key && this.savePosition(e.payload.currentTime, e.payload.duration));
+		}), this.pendingPrompt?.mediaKey !== this.activeMedia.key && this.resumeCandidate === null && this.savePosition(e.payload.currentTime, e.payload.duration));
 	}
 	onPause(e) {
-		this.disposed || !this.running || !this.activeMedia || !this.matchesSession(e.sessionId) || this.pendingPrompt?.mediaKey === this.activeMedia.key || this.savePosition(e.payload.currentTime, this.activeMedia.duration);
+		this.disposed || !this.running || !this.activeMedia || !this.matchesSession(e.sessionId) || this.pendingPrompt?.mediaKey === this.activeMedia.key || this.resumeCandidate !== null || this.savePosition(e.payload.currentTime, this.activeMedia.duration);
 	}
 	onSeeked(e) {
-		this.disposed || !this.running || !this.activeMedia || !this.matchesSession(e.sessionId) || this.pendingPrompt?.mediaKey === this.activeMedia.key || (this.activeMedia = Object.freeze({
+		this.disposed || !this.running || !this.activeMedia || !this.matchesSession(e.sessionId) || this.pendingPrompt?.mediaKey === this.activeMedia.key || this.resumeCandidate !== null || (this.activeMedia = Object.freeze({
 			...this.activeMedia,
 			currentTime: e.payload.to
 		}), this.savePosition(e.payload.to, this.activeMedia.duration));
 	}
 	onEnded(e) {
-		this.disposed || !this.activeMedia || !this.matchesSession(e.sessionId) || (this.removePosition(this.activeMedia.key), this.setPendingPrompt(null));
+		this.disposed || !this.activeMedia || !this.matchesSession(e.sessionId) || (this.removePosition(this.activeMedia.key), this.resumeCandidate = null, this.setPendingPrompt(null));
 	}
 	onSnapshot(e) {
 		if (this.disposed) return;
@@ -229,7 +234,7 @@ var g = class {
 		let t = this.activateFromSnapshot(e);
 		if (t) {
 			if (e.status === "ended") {
-				this.removePosition(t.key), this.setPendingPrompt(null);
+				this.removePosition(t.key), this.resumeCandidate = null, this.setPendingPrompt(null);
 				return;
 			}
 			this.running && e.status === "ready" && this.offerResumeIfAvailable();
@@ -238,32 +243,34 @@ var g = class {
 	async resume() {
 		let e = this.pendingPrompt;
 		if (!this.canControl(e)) return !1;
-		this.setPendingPrompt(null), this.bypassPrompt = {
+		this.setPendingPrompt(null);
+		let t = this.resumeCandidate;
+		this.resumeCandidate = null, this.bypassPrompt = {
 			mediaKey: e.mediaKey,
 			sessionId: this.activeMedia?.sessionId ?? null
 		};
 		try {
 			return await this.context.commands.execute("media.seekTo", { seconds: e.position }), await this.context.commands.execute("media.play", void 0), !0;
-		} catch (t) {
-			return this.bypassPrompt = null, this.setPendingPrompt(e), this.logCommandFailure("resume", t), !1;
+		} catch (n) {
+			return this.bypassPrompt = null, this.resumeCandidate = t, this.setPendingPrompt(e), this.logCommandFailure("resume", n), !1;
 		}
 	}
 	async startOver() {
 		let e = this.pendingPrompt;
 		if (!this.canControl(e)) return !1;
-		let t = this.positions[e.mediaKey];
-		delete this.positions[e.mediaKey], this.persistPositions(), this.setPendingPrompt(null), this.bypassPrompt = {
+		let t = this.positions[e.mediaKey], n = this.resumeCandidate;
+		delete this.positions[e.mediaKey], this.persistPositions(), this.setPendingPrompt(null), this.resumeCandidate = null, this.bypassPrompt = {
 			mediaKey: e.mediaKey,
 			sessionId: this.activeMedia?.sessionId ?? null
 		};
 		try {
 			return await this.context.commands.execute("media.seekTo", { seconds: 0 }), await this.context.commands.execute("media.play", void 0), !0;
-		} catch (n) {
-			return this.bypassPrompt = null, t && (this.positions[e.mediaKey] = t), this.persistPositions(), this.setPendingPrompt(e), this.logCommandFailure("start over", n), !1;
+		} catch (r) {
+			return this.bypassPrompt = null, this.resumeCandidate = n, t && (this.positions[e.mediaKey] = t), this.persistPositions(), this.setPendingPrompt(e), this.logCommandFailure("start over", r), !1;
 		}
 	}
 	dispose() {
-		this.disposed || (this.running = !1, this.disposed = !0, this.bypassPrompt = null, this.pendingPrompt = null, this.listeners.clear(), this.emitState());
+		this.disposed || (this.running = !1, this.disposed = !0, this.resumeCandidate = null, this.bypassPrompt = null, this.pendingPrompt = null, this.listeners.clear(), this.emitState());
 	}
 	buildState() {
 		return Object.freeze({
@@ -292,10 +299,10 @@ var g = class {
 	}
 	setActiveMedia(e) {
 		let t = !this.activeMedia || this.activeMedia.key !== e.key || this.activeMedia.sessionId !== null && e.sessionId !== null && this.activeMedia.sessionId !== e.sessionId;
-		this.activeMedia = Object.freeze(e), t && (this.bypassPrompt = null, this.setPendingPrompt(null));
+		this.activeMedia = Object.freeze(e), t && (this.bypassPrompt = null, this.resumeCandidate = this.config.enabled && this.uiAvailable ? this.positions[e.key] ?? null : null, this.setPendingPrompt(null));
 	}
 	clearActiveMedia() {
-		!this.activeMedia && !this.pendingPrompt || (this.activeMedia = null, this.bypassPrompt = null, this.setPendingPrompt(null));
+		!this.activeMedia && !this.pendingPrompt || (this.activeMedia = null, this.resumeCandidate = null, this.bypassPrompt = null, this.setPendingPrompt(null));
 	}
 	activateFromSnapshot(e) {
 		return e.media ? (this.handleMediaSnapshot(e.media, e.sessionId), this.activeMedia) : null;
@@ -324,7 +331,7 @@ var g = class {
 	}
 	offerResumeIfAvailable() {
 		if (!this.running || !this.config.enabled || !this.uiAvailable || !this.activeMedia) return;
-		let e = h(this.activeMedia, this.positions[this.activeMedia.key]);
+		let e = h(this.activeMedia, this.resumeCandidate ?? void 0, { allowPastPosition: !0 });
 		e && this.setPendingPrompt(e);
 	}
 	savePosition(e, t) {
@@ -398,7 +405,7 @@ function _({ controller: e }) {
 		className: "plugin-stage-info resume-play-prompt",
 		"aria-labelledby": "resume-play-prompt-title",
 		"aria-live": "polite"
-	}, (0, n.createElement)("h3", { id: "resume-play-prompt-title" }, "Resume Play"), (0, n.createElement)("p", null, `Continue “${r.displayName}” from ${f(r.position)}${i}?`), (0, n.createElement)("div", { className: "button-grid" }, (0, n.createElement)("button", {
+	}, (0, n.createElement)("h3", { id: "resume-play-prompt-title" }, "Resume Play"), (0, n.createElement)("p", null, `Continue "${r.displayName}" from ${f(r.position)}${i}?`), (0, n.createElement)("div", { className: "button-grid" }, (0, n.createElement)("button", {
 		type: "button",
 		className: "mini-button",
 		onClick: () => {
