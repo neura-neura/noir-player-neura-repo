@@ -248,7 +248,7 @@ describe('Resume Play Noir Player plugin', () => {
       displayName: media.displayName,
       kind: media.sourceKind,
     }, 'session-1');
-    testContext.emit('media:ready', media, 'session-1');
+    testContext.emit('media:ready', { media }, 'session-1');
     testContext.emit('media:time-update', {
       currentTime: 42.25,
       duration: 120,
@@ -263,8 +263,8 @@ describe('Resume Play Noir Player plugin', () => {
       ].position,
     ).toBe(42.25);
 
-    const secondSessionMedia = createMedia(media.displayName);
-    const secondSession = createSnapshot(secondSessionMedia, 'session-2', 'ready');
+    const secondSessionMedia = createMedia(media.displayName, 100);
+    const secondSession = createSnapshot(secondSessionMedia, 'session-2', 'playing');
     testContext.setSnapshot(secondSession);
     testContext.emit('media:opening', {
       sessionId: 'session-2',
@@ -274,10 +274,10 @@ describe('Resume Play Noir Player plugin', () => {
     // The host emits this bootstrap event before media:ready. It must not
     // erase the position that the ready event is about to offer.
     testContext.emit('media:time-update', {
-      currentTime: 0,
+      currentTime: 100,
       duration: 120,
     }, 'session-2');
-    testContext.emit('media:ready', secondSessionMedia, 'session-2');
+    testContext.emit('media:ready', { media: secondSessionMedia }, 'session-2');
 
     expect(instance.api?.getState().prompt?.position).toBe(42.25);
     expect(testContext.invokeBeforePlay(secondSession)).toEqual({ decision: 'cancel' });
@@ -295,7 +295,11 @@ describe('Resume Play Noir Player plugin', () => {
       kind: media.sourceKind,
     }, 'session-3');
     testContext.setSnapshot(createSnapshot(createMedia(media.displayName), 'session-3', 'ready'));
-    testContext.emit('media:ready', createMedia(media.displayName), 'session-3');
+    testContext.emit(
+      'media:ready',
+      { media: createMedia(media.displayName) },
+      'session-3',
+    );
     expect(instance.api?.getState().prompt?.position).toBe(42.25);
     expect(await instance.api?.startOver()).toBe(true);
     expect(testContext.commands.slice(-2)).toEqual([
