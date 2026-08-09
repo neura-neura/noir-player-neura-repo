@@ -49,10 +49,7 @@ var e = (e, t) => () => (t || (e((t = { exports: {} }).exports, t), e = null), t
 			_owner: u.current
 		};
 	}
-	var p = { current: null };
-	e.createElement = f, e.useSyncExternalStore = function(e, t, n) {
-		return p.current.useSyncExternalStore(e, t, n);
-	};
+	e.createElement = f;
 })), n = (/* @__PURE__ */ e(((e, n) => {
 	n.exports = t();
 })))();
@@ -380,7 +377,7 @@ var g = class {
 	}
 };
 function _({ controller: e }) {
-	let t = (0, n.useSyncExternalStore)((t) => e.subscribe(t), () => e.state, () => e.state);
+	let t = e.state;
 	if (!t.enabled || !t.prompt) return null;
 	let r = t.prompt, i = r.percentage === null ? "" : ` (${Math.round(r.percentage)}% complete)`;
 	return (0, n.createElement)("section", {

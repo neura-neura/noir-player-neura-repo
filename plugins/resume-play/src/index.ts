@@ -1,4 +1,4 @@
-import { createElement, useSyncExternalStore } from 'react';
+import { createElement } from 'react';
 import {
   definePlugin,
   type NoirPluginContext,
@@ -721,11 +721,11 @@ class ResumePlayController {
 function ResumePlayPrompt({
   controller,
 }: PluginSlotProps & { readonly controller: ResumePlayController }) {
-  const state = useSyncExternalStore(
-    (listener) => controller.subscribe(listener),
-    () => controller.state,
-    () => controller.state,
-  );
+  // The host re-renders public slots when the player snapshot changes. The
+  // component deliberately avoids React hooks because the published plugin
+  // bundle carries its own React runtime; hooks from that copy cannot share
+  // the host renderer's dispatcher.
+  const state = controller.state;
 
   if (!state.enabled || !state.prompt) return null;
 
