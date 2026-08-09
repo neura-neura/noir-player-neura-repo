@@ -271,6 +271,7 @@ describe('Resume Play Noir Player plugin', () => {
       displayName: media.displayName,
       kind: media.sourceKind,
     }, 'session-2');
+    expect(instance.api?.getState().prompt?.position).toBe(42.25);
     // The host emits this bootstrap event before media:ready. It must not
     // erase the position that the ready event is about to offer.
     testContext.emit('media:time-update', {

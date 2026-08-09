@@ -352,6 +352,7 @@ class ResumePlayController {
       duration: null,
       currentTime: 0,
     });
+    this.offerResumeIfAvailable();
   }
 
   onReady(event: PluginEventEnvelope<'media:ready'>): void {

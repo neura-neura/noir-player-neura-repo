@@ -187,14 +187,14 @@ var g = class {
 			sourceKind: e.payload.kind,
 			displayName: e.payload.displayName
 		});
-		t && this.setActiveMedia({
+		t && (this.setActiveMedia({
 			key: t,
 			sourceKind: e.payload.kind,
 			displayName: e.payload.displayName.trim(),
 			sessionId: e.sessionId,
 			duration: null,
 			currentTime: 0
-		});
+		}), this.offerResumeIfAvailable());
 	}
 	onReady(e) {
 		this.disposed || !e.payload.media || (this.handleMediaSnapshot(e.payload.media, e.sessionId), this.offerResumeIfAvailable());
