@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { PlayerSnapshot } from '@noir-player/plugin-api';
 import plugin, {
   buildMediaKey,
@@ -235,7 +235,7 @@ describe('Resume Play Noir Player plugin', () => {
     expect(testContext.contributions).toHaveLength(1);
     expect(testContext.contributions[0]).toMatchObject({
       id: 'namespace.resume-play/prompt',
-      slot: 'stage.info',
+      slot: 'notifications',
     });
 
     await instance.start?.();
@@ -272,6 +272,7 @@ describe('Resume Play Noir Player plugin', () => {
       kind: media.sourceKind,
     }, 'session-2');
     expect(instance.api?.getState().prompt?.position).toBe(42.25);
+    expect(instance.api?.getState().promptRemainingMs).toBe(5000);
     // The host emits this bootstrap event before media:ready. It must not
     // erase the position that the ready event is about to offer.
     testContext.emit('media:time-update', {
@@ -317,6 +318,40 @@ describe('Resume Play Noir Player plugin', () => {
     await instance.stop?.();
     await instance.dispose?.();
     await instance.dispose?.();
+  });
+
+  it('dismisses the floating notification after five seconds', async () => {
+    vi.useFakeTimers();
+    let instance: Awaited<ReturnType<typeof plugin.setup>> | undefined;
+
+    try {
+      const testContext = createContext();
+      const media = createMedia('Timed prompt.mkv');
+      const mediaKey = buildMediaKey(media) as string;
+      testContext.stored.set('resumePositions', {
+        [mediaKey]: { position: 42.25, duration: 120, updatedAt: 1 },
+      });
+      instance = await plugin.setup(testContext.context, plugin.defaultConfig);
+      await instance.start?.();
+
+      testContext.setSnapshot(createSnapshot(media, 'timed-session', 'ready'));
+      testContext.emit('media:opening', {
+        sessionId: 'timed-session',
+        displayName: media.displayName,
+        kind: media.sourceKind,
+      }, 'timed-session');
+
+      expect(instance.api?.getState().prompt).not.toBeNull();
+      expect(instance.api?.getState().promptRemainingMs).toBe(5000);
+
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(instance.api?.getState().prompt).toBeNull();
+      expect(instance.api?.getState().promptRemainingMs).toBe(0);
+    } finally {
+      await instance?.dispose?.();
+      vi.useRealTimers();
+    }
   });
 
   it('clears a saved position when playback reaches the end', async () => {

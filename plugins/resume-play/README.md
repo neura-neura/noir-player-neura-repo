@@ -1,12 +1,16 @@
 # Resume Play
 
 Resume Play remembers the last meaningful playback position for each video. On
-the next play attempt it pauses the action and shows a public Noir Player prompt
-with two choices:
+the next play attempt it shows a floating public Noir Player notification with
+a five-second countdown and progress bar. It offers two choices:
 
 - **Resume** seeks to the stored position and continues playback.
 - **Start over** clears the stored position, seeks to the beginning, and starts
   playback.
+
+If no choice is made, the notification disappears after five seconds and does
+not force either action. The next valid playback position replaces the old
+saved point.
 
 Positions are saved from the public player time, pause, and seeked events. A
 position within five seconds of the beginning is ignored, and a position within
@@ -22,8 +26,8 @@ The manifest requests only:
 - `player.read`: reads the public player snapshot and playback events.
 - `player.control`: uses the public `media.seekTo` and `media.play` commands
   after the user chooses an action.
-- `ui.contribute`: adds the Resume/Start over prompt to the public
-  `stage.info` slot.
+- `ui.contribute`: adds the floating Resume/Start over notification to the
+  public `notifications` slot.
 - `storage`: persists positions in the plugin's namespaced storage.
 
 It does not request `native.mpv.read`, `native.mpv.raw`, `unsafe.dom`,

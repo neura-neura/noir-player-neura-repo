@@ -58,7 +58,7 @@ function r(e) {
 }
 //#endregion
 //#region plugins/resume-play/src/index.ts
-var i = "namespace.resume-play", a = "resumePositions", o = 5, s = 3, c = 500, l = {
+var i = "namespace.resume-play", a = "resumePositions", o = 5, s = 3, c = 500, l = 5e3, u = 200, d = {
 	id: i,
 	name: "Resume Play",
 	version: "0.1.0",
@@ -76,29 +76,29 @@ var i = "namespace.resume-play", a = "resumePositions", o = 5, s = 3, c = 500, l
 		"storage"
 	]
 };
-function u(e) {
+function f(e) {
 	return e === "local-file" || e === "object-url" || e === "hls";
 }
-function d(e) {
+function p(e) {
 	if (!e || typeof e != "object" || Array.isArray(e)) return;
 	let t = e, n = t.sourceKind, r = typeof t.displayName == "string" ? t.displayName.trim() : "";
-	if (!(!u(n) || !r)) return JSON.stringify({
+	if (!(!f(n) || !r)) return JSON.stringify({
 		sourceKind: n,
 		displayName: r
 	});
 }
-function f(e) {
+function m(e) {
 	if (!Number.isFinite(e) || e < 0) return "0:00";
 	let t = Math.floor(e), n = t % 60, r = Math.floor(t / 60), i = r % 60, a = Math.floor(r / 60), o = String(n).padStart(2, "0");
 	return a > 0 ? `${a}:${String(i).padStart(2, "0")}:${o}` : `${i}:${o}`;
 }
-function p(e) {
+function h(e) {
 	if (!e || typeof e != "object" || Array.isArray(e)) throw TypeError("Resume Play config must be an object.");
 	let t = e.enabled;
 	if (typeof t != "boolean") throw TypeError("Resume Play config enabled must be a boolean.");
 	return Object.freeze({ enabled: t });
 }
-function m(e) {
+function g(e) {
 	if (!e || typeof e != "object" || Array.isArray(e)) return {};
 	let t = {};
 	for (let [n, r] of Object.entries(e)) {
@@ -112,7 +112,7 @@ function m(e) {
 	}
 	return t;
 }
-function h(e, t, n = {}) {
+function _(e, t, n = {}) {
 	if (!t || t.position < o) return null;
 	let r = e.duration ?? t.duration;
 	if (r !== null && (!Number.isFinite(r) || r <= 0 || t.position >= r - s) || !n.allowPastPosition && t.position <= e.currentTime + s) return null;
@@ -125,7 +125,7 @@ function h(e, t, n = {}) {
 		percentage: i
 	});
 }
-var g = class {
+var v = class {
 	context;
 	listeners = /* @__PURE__ */ new Set();
 	positions;
@@ -136,6 +136,9 @@ var g = class {
 	bypassPrompt = null;
 	uiAvailable = !1;
 	uiRefresh = null;
+	promptTimer = null;
+	promptExpiresAt = null;
+	promptRemainingMs = 0;
 	running = !1;
 	disposed = !1;
 	_state;
@@ -178,12 +181,12 @@ var g = class {
 		let t = this.activateFromSnapshot(e);
 		if (!t) return { decision: "allow" };
 		if (this.matchesBypass(t)) return this.bypassPrompt = null, { decision: "allow" };
-		let n = this.pendingPrompt?.mediaKey === t.key ? this.pendingPrompt : h(t, this.resumeCandidate ?? this.positions[t.key], { allowPastPosition: this.resumeCandidate !== null });
+		let n = this.pendingPrompt?.mediaKey === t.key ? this.pendingPrompt : _(t, this.resumeCandidate ?? this.positions[t.key], { allowPastPosition: this.resumeCandidate !== null });
 		return n ? (this.setPendingPrompt(n), { decision: "cancel" }) : { decision: "allow" };
 	}
 	onOpening(e) {
-		if (this.disposed || !u(e.payload.kind)) return;
-		let t = d({
+		if (this.disposed || !f(e.payload.kind)) return;
+		let t = p({
 			sourceKind: e.payload.kind,
 			displayName: e.payload.displayName
 		});
@@ -270,13 +273,14 @@ var g = class {
 		}
 	}
 	dispose() {
-		this.disposed || (this.running = !1, this.disposed = !0, this.resumeCandidate = null, this.bypassPrompt = null, this.pendingPrompt = null, this.listeners.clear(), this.emitState());
+		this.disposed || (this.stopPromptTimer(), this.running = !1, this.disposed = !0, this.resumeCandidate = null, this.bypassPrompt = null, this.pendingPrompt = null, this.listeners.clear(), this.emitState());
 	}
 	buildState() {
 		return Object.freeze({
 			enabled: this.config.enabled,
 			currentMediaKey: this.activeMedia?.key ?? null,
-			prompt: this.pendingPrompt
+			prompt: this.pendingPrompt,
+			promptRemainingMs: this.promptRemainingMs
 		});
 	}
 	emitState() {
@@ -295,7 +299,28 @@ var g = class {
 		}
 	}
 	setPendingPrompt(e) {
-		this.disposed || this.pendingPrompt === e || this.pendingPrompt !== null && e !== null && this.pendingPrompt.mediaKey === e.mediaKey && this.pendingPrompt.position === e.position && this.pendingPrompt.duration === e.duration || (this.pendingPrompt = e, this.emitState());
+		this.disposed || this.pendingPrompt === e || this.pendingPrompt !== null && e !== null && this.pendingPrompt.mediaKey === e.mediaKey && this.pendingPrompt.position === e.position && this.pendingPrompt.duration === e.duration || (this.pendingPrompt = e, e ? this.startPromptTimer() : this.stopPromptTimer(), this.emitState());
+	}
+	startPromptTimer() {
+		this.stopPromptTimer(), this.promptExpiresAt = Date.now() + l, this.promptRemainingMs = l, this.promptTimer = setInterval(() => {
+			if (!this.pendingPrompt || this.promptExpiresAt === null) {
+				this.stopPromptTimer();
+				return;
+			}
+			let e = Math.max(0, this.promptExpiresAt - Date.now());
+			if (e === 0) {
+				let e = this.activeMedia;
+				this.resumeCandidate = null, e && (this.bypassPrompt = {
+					mediaKey: e.key,
+					sessionId: e.sessionId
+				}), this.setPendingPrompt(null);
+				return;
+			}
+			e !== this.promptRemainingMs && (this.promptRemainingMs = e, this.emitState());
+		}, u);
+	}
+	stopPromptTimer() {
+		this.promptTimer !== null && (clearInterval(this.promptTimer), this.promptTimer = null), this.promptExpiresAt = null, this.promptRemainingMs = 0;
 	}
 	setActiveMedia(e) {
 		let t = !this.activeMedia || this.activeMedia.key !== e.key || this.activeMedia.sessionId !== null && e.sessionId !== null && this.activeMedia.sessionId !== e.sessionId;
@@ -308,7 +333,7 @@ var g = class {
 		return e.media ? (this.handleMediaSnapshot(e.media, e.sessionId), this.activeMedia) : null;
 	}
 	handleMediaSnapshot(e, t) {
-		let n = d(e);
+		let n = p(e);
 		if (!n) {
 			this.clearActiveMedia();
 			return;
@@ -331,7 +356,7 @@ var g = class {
 	}
 	offerResumeIfAvailable() {
 		if (!this.running || !this.config.enabled || !this.uiAvailable || !this.activeMedia) return;
-		let e = h(this.activeMedia, this.resumeCandidate ?? void 0, { allowPastPosition: !0 });
+		let e = _(this.activeMedia, this.resumeCandidate ?? void 0, { allowPastPosition: !0 });
 		e && this.setPendingPrompt(e);
 	}
 	savePosition(e, t) {
@@ -366,7 +391,7 @@ var g = class {
 	readPositions() {
 		if (!this.context.hasCapability("storage")) return {};
 		try {
-			return m(this.context.storage.get(a));
+			return g(this.context.storage.get(a));
 		} catch (e) {
 			return this.context.logger.warn("Unable to read Resume Play positions.", { error: e instanceof Error ? e.message : "unknown error" }), {};
 		}
@@ -397,41 +422,135 @@ var g = class {
 		this.context.logger.warn(`Unable to ${e} in Resume Play.`, { error: t instanceof Error ? t.message : "unknown error" });
 	}
 };
-function _({ controller: e }) {
+function y({ controller: e }) {
 	let t = e.state;
 	if (!t.enabled || !t.prompt) return null;
-	let r = t.prompt, i = r.percentage === null ? "" : ` (${Math.round(r.percentage)}% complete)`;
+	let r = t.prompt, i = r.percentage === null ? "" : ` (${Math.round(r.percentage)}% complete)`, a = Math.max(0, Math.min(l, t.promptRemainingMs)), o = Math.round(a / l * 100), s = Math.max(1, Math.ceil(a / 1e3)), c = {
+		position: "fixed",
+		top: "84px",
+		right: "24px",
+		zIndex: 1e3,
+		width: "min(420px, calc(100vw - 32px))",
+		padding: "16px",
+		border: "1px solid rgba(57, 167, 255, 0.42)",
+		borderRadius: "20px",
+		background: "rgba(11, 15, 22, 0.96)",
+		boxShadow: "0 18px 48px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.04) inset",
+		backdropFilter: "blur(16px)",
+		color: "#eff5fb",
+		pointerEvents: "auto"
+	}, u = {
+		minHeight: "44px",
+		padding: "0 14px",
+		border: "1px solid rgba(255, 255, 255, 0.14)",
+		borderRadius: "12px",
+		color: "#eff5fb",
+		fontWeight: 700,
+		cursor: "pointer"
+	};
 	return (0, n.createElement)("section", {
-		className: "plugin-stage-info resume-play-prompt",
-		"aria-labelledby": "resume-play-prompt-title",
-		"aria-live": "polite"
-	}, (0, n.createElement)("h3", { id: "resume-play-prompt-title" }, "Resume Play"), (0, n.createElement)("p", null, `Continue "${r.displayName}" from ${f(r.position)}${i}?`), (0, n.createElement)("div", { className: "button-grid" }, (0, n.createElement)("button", {
+		className: "resume-play-notification",
+		role: "dialog",
+		"aria-labelledby": "resume-play-notification-title",
+		"aria-describedby": "resume-play-notification-description",
+		"aria-live": "polite",
+		style: c
+	}, (0, n.createElement)("div", { style: {
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "space-between",
+		gap: "12px"
+	} }, (0, n.createElement)("h2", {
+		id: "resume-play-notification-title",
+		style: {
+			margin: 0,
+			fontSize: "15px",
+			lineHeight: 1.25,
+			letterSpacing: "0.02em"
+		}
+	}, "Resume Play"), (0, n.createElement)("span", {
+		"aria-label": `${s} seconds remaining`,
+		style: {
+			flex: "0 0 auto",
+			minWidth: "40px",
+			padding: "4px 8px",
+			borderRadius: "999px",
+			background: "rgba(57, 167, 255, 0.16)",
+			color: "#8bdcff",
+			fontSize: "12px",
+			fontVariantNumeric: "tabular-nums",
+			textAlign: "center"
+		}
+	}, `${s}s`)), (0, n.createElement)("p", {
+		id: "resume-play-notification-description",
+		style: {
+			margin: "12px 0 14px",
+			color: "rgba(239, 245, 251, 0.78)",
+			fontSize: "14px",
+			lineHeight: 1.45,
+			overflowWrap: "anywhere"
+		}
+	}, `Continue "${r.displayName}" from ${m(r.position)}${i}?`), (0, n.createElement)("div", { style: {
+		display: "grid",
+		gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+		gap: "8px"
+	} }, (0, n.createElement)("button", {
 		type: "button",
-		className: "mini-button",
+		style: {
+			...u,
+			background: "rgba(57, 167, 255, 0.22)",
+			borderColor: "rgba(57, 167, 255, 0.48)"
+		},
 		onClick: () => {
 			e.resume();
 		}
 	}, "Resume"), (0, n.createElement)("button", {
 		type: "button",
-		className: "mini-button",
+		style: {
+			...u,
+			background: "rgba(255, 255, 255, 0.06)"
+		},
 		onClick: () => {
 			e.startOver();
 		}
-	}, "Start over")));
+	}, "Start over")), (0, n.createElement)("div", {
+		role: "progressbar",
+		"aria-label": "Resume prompt time remaining",
+		"aria-valuemin": 0,
+		"aria-valuemax": l,
+		"aria-valuenow": a,
+		"aria-valuetext": `${s} seconds remaining`,
+		style: {
+			height: "4px",
+			marginTop: "14px",
+			overflow: "hidden",
+			borderRadius: "999px",
+			background: "rgba(255, 255, 255, 0.12)"
+		}
+	}, (0, n.createElement)("div", {
+		"aria-hidden": "true",
+		style: {
+			width: `${o}%`,
+			height: "100%",
+			borderRadius: "inherit",
+			background: "linear-gradient(90deg, #39a7ff, #6fe1ff)",
+			transition: "width 180ms linear"
+		}
+	})));
 }
-var v = r({
-	manifest: l,
+var b = r({
+	manifest: d,
 	defaultConfig: { enabled: !0 },
-	config: { parse: p },
+	config: { parse: h },
 	setup(e, t) {
-		let r = new g(e, t);
+		let r = new v(e, t);
 		if (e.resources.add(() => r.dispose()), e.hasCapability("ui.contribute")) {
 			let t, a = {
 				id: `${i}/prompt`,
-				slot: "stage.info",
+				slot: "notifications",
 				order: 10,
 				ariaLabel: "Resume Play",
-				component: (e) => (0, n.createElement)(_, {
+				component: (e) => (0, n.createElement)(y, {
 					...e,
 					controller: r
 				})
@@ -474,4 +593,4 @@ var v = r({
 	}
 });
 //#endregion
-export { i as PLUGIN_ID, d as buildMediaKey, v as default, f as formatResumeTime, p as parseResumePlayConfig };
+export { i as PLUGIN_ID, p as buildMediaKey, b as default, m as formatResumeTime, h as parseResumePlayConfig };

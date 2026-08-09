@@ -25,6 +25,7 @@ export interface ResumePlayState {
   readonly enabled: boolean;
   readonly currentMediaKey: string | null;
   readonly prompt: ResumePrompt | null;
+  readonly promptRemainingMs: number;
 }
 
 export interface ResumePlayApi {
@@ -38,6 +39,8 @@ const STORAGE_KEY = 'resumePositions';
 const MIN_RESUME_SECONDS = 5;
 const COMPLETION_EPSILON_SECONDS = 3;
 const MAX_STORED_POSITIONS = 500;
+const PROMPT_TIMEOUT_MS = 5_000;
+const PROMPT_TICK_MS = 200;
 
 const manifest = {
   id: PLUGIN_ID,
@@ -232,6 +235,9 @@ class ResumePlayController {
   private bypassPrompt: PendingPlayBypass | null = null;
   private uiAvailable = false;
   private uiRefresh: UiRefresh | null = null;
+  private promptTimer: ReturnType<typeof setInterval> | null = null;
+  private promptExpiresAt: number | null = null;
+  private promptRemainingMs = 0;
   private running = false;
   private disposed = false;
   private _state: ResumePlayState;
@@ -526,6 +532,7 @@ class ResumePlayController {
 
   dispose(): void {
     if (this.disposed) return;
+    this.stopPromptTimer();
     this.running = false;
     this.disposed = true;
     this.resumeCandidate = null;
@@ -540,6 +547,7 @@ class ResumePlayController {
       enabled: this.config.enabled,
       currentMediaKey: this.activeMedia?.key ?? null,
       prompt: this.pendingPrompt,
+      promptRemainingMs: this.promptRemainingMs,
     });
   }
 
@@ -578,7 +586,51 @@ class ResumePlayController {
       return;
     }
     this.pendingPrompt = prompt;
+    if (prompt) {
+      this.startPromptTimer();
+    } else {
+      this.stopPromptTimer();
+    }
     this.emitState();
+  }
+
+  private startPromptTimer(): void {
+    this.stopPromptTimer();
+    this.promptExpiresAt = Date.now() + PROMPT_TIMEOUT_MS;
+    this.promptRemainingMs = PROMPT_TIMEOUT_MS;
+    this.promptTimer = setInterval(() => {
+      if (!this.pendingPrompt || this.promptExpiresAt === null) {
+        this.stopPromptTimer();
+        return;
+      }
+
+      const remaining = Math.max(0, this.promptExpiresAt - Date.now());
+      if (remaining === 0) {
+        const active = this.activeMedia;
+        this.resumeCandidate = null;
+        if (active) {
+          this.bypassPrompt = {
+            mediaKey: active.key,
+            sessionId: active.sessionId,
+          };
+        }
+        this.setPendingPrompt(null);
+        return;
+      }
+
+      if (remaining === this.promptRemainingMs) return;
+      this.promptRemainingMs = remaining;
+      this.emitState();
+    }, PROMPT_TICK_MS);
+  }
+
+  private stopPromptTimer(): void {
+    if (this.promptTimer !== null) {
+      clearInterval(this.promptTimer);
+      this.promptTimer = null;
+    }
+    this.promptExpiresAt = null;
+    this.promptRemainingMs = 0;
   }
 
   private setActiveMedia(active: ActiveMedia): void {
@@ -808,28 +860,124 @@ function ResumePlayPrompt({
   const prompt = state.prompt;
   const percentage =
     prompt.percentage === null ? '' : ` (${Math.round(prompt.percentage)}% complete)`;
+  const remainingMs = Math.max(
+    0,
+    Math.min(PROMPT_TIMEOUT_MS, state.promptRemainingMs),
+  );
+  const progressPercent = Math.round(
+    (remainingMs / PROMPT_TIMEOUT_MS) * 100,
+  );
+  const secondsRemaining = Math.max(1, Math.ceil(remainingMs / 1000));
+  const notificationStyle = {
+    position: 'fixed',
+    top: '84px',
+    right: '24px',
+    zIndex: 1000,
+    width: 'min(420px, calc(100vw - 32px))',
+    padding: '16px',
+    border: '1px solid rgba(57, 167, 255, 0.42)',
+    borderRadius: '20px',
+    background: 'rgba(11, 15, 22, 0.96)',
+    boxShadow:
+      '0 18px 48px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.04) inset',
+    backdropFilter: 'blur(16px)',
+    color: '#eff5fb',
+    pointerEvents: 'auto',
+  } as const;
+  const actionStyle = {
+    minHeight: '44px',
+    padding: '0 14px',
+    border: '1px solid rgba(255, 255, 255, 0.14)',
+    borderRadius: '12px',
+    color: '#eff5fb',
+    fontWeight: 700,
+    cursor: 'pointer',
+  } as const;
 
   return createElement(
     'section',
     {
-      className: 'plugin-stage-info resume-play-prompt',
-      'aria-labelledby': 'resume-play-prompt-title',
+      className: 'resume-play-notification',
+      role: 'dialog',
+      'aria-labelledby': 'resume-play-notification-title',
+      'aria-describedby': 'resume-play-notification-description',
       'aria-live': 'polite',
+      style: notificationStyle,
     },
-    createElement('h3', { id: 'resume-play-prompt-title' }, 'Resume Play'),
+    createElement(
+      'div',
+      {
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+        },
+      },
+      createElement(
+        'h2',
+        {
+          id: 'resume-play-notification-title',
+          style: {
+            margin: 0,
+            fontSize: '15px',
+            lineHeight: 1.25,
+            letterSpacing: '0.02em',
+          },
+        },
+        'Resume Play',
+      ),
+      createElement(
+        'span',
+        {
+          'aria-label': `${secondsRemaining} seconds remaining`,
+          style: {
+            flex: '0 0 auto',
+            minWidth: '40px',
+            padding: '4px 8px',
+            borderRadius: '999px',
+            background: 'rgba(57, 167, 255, 0.16)',
+            color: '#8bdcff',
+            fontSize: '12px',
+            fontVariantNumeric: 'tabular-nums',
+            textAlign: 'center',
+          },
+        },
+        `${secondsRemaining}s`,
+      ),
+    ),
     createElement(
       'p',
-      null,
+      {
+        id: 'resume-play-notification-description',
+        style: {
+          margin: '12px 0 14px',
+          color: 'rgba(239, 245, 251, 0.78)',
+          fontSize: '14px',
+          lineHeight: 1.45,
+          overflowWrap: 'anywhere',
+        },
+      },
       `Continue "${prompt.displayName}" from ${formatResumeTime(prompt.position)}${percentage}?`,
     ),
     createElement(
       'div',
-      { className: 'button-grid' },
+      {
+        style: {
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+          gap: '8px',
+        },
+      },
       createElement(
         'button',
         {
           type: 'button',
-          className: 'mini-button',
+          style: {
+            ...actionStyle,
+            background: 'rgba(57, 167, 255, 0.22)',
+            borderColor: 'rgba(57, 167, 255, 0.48)',
+          },
           onClick: () => {
             void controller.resume();
           },
@@ -840,13 +988,44 @@ function ResumePlayPrompt({
         'button',
         {
           type: 'button',
-          className: 'mini-button',
+          style: {
+            ...actionStyle,
+            background: 'rgba(255, 255, 255, 0.06)',
+          },
           onClick: () => {
             void controller.startOver();
           },
         },
         'Start over',
       ),
+    ),
+    createElement(
+      'div',
+      {
+        role: 'progressbar',
+        'aria-label': 'Resume prompt time remaining',
+        'aria-valuemin': 0,
+        'aria-valuemax': PROMPT_TIMEOUT_MS,
+        'aria-valuenow': remainingMs,
+        'aria-valuetext': `${secondsRemaining} seconds remaining`,
+        style: {
+          height: '4px',
+          marginTop: '14px',
+          overflow: 'hidden',
+          borderRadius: '999px',
+          background: 'rgba(255, 255, 255, 0.12)',
+        },
+      },
+      createElement('div', {
+        'aria-hidden': 'true',
+        style: {
+          width: `${progressPercent}%`,
+          height: '100%',
+          borderRadius: 'inherit',
+          background: 'linear-gradient(90deg, #39a7ff, #6fe1ff)',
+          transition: 'width 180ms linear',
+        },
+      }),
     ),
   );
 }
@@ -865,7 +1044,7 @@ const plugin = definePlugin<ResumePlayConfig, ResumePlayApi>({
       let promptDisposable: (() => void) | undefined;
       const promptContribution = {
         id: `${PLUGIN_ID}/prompt`,
-        slot: 'stage.info' as const,
+        slot: 'notifications' as const,
         order: 10,
         ariaLabel: 'Resume Play',
         component: (props: PluginSlotProps) =>
