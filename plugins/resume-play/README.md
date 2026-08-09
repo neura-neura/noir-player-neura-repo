@@ -2,7 +2,8 @@
 
 Resume Play remembers the last meaningful playback position for each video. On
 the next play attempt it shows a floating public Noir Player notification with
-a five-second countdown and progress bar. It offers two choices:
+a configurable countdown and progress bar. The default duration is five
+seconds. It offers two choices:
 
 - **Resume** seeks to the stored position and continues playback.
 - **Start over** clears the stored position, seeks to the beginning, and starts
@@ -27,8 +28,10 @@ The manifest requests only:
 - `player.control`: uses the public `media.seekTo` and `media.play` commands
   after the user chooses an action.
 - `ui.contribute`: adds the floating Resume/Start over notification to the
-  public `notifications` slot.
-- `storage`: persists positions in the plugin's namespaced storage.
+  public `notifications` slot and adds the duration control to
+  `settings.sections`.
+- `storage`: persists positions and the notification-duration preference in the
+  plugin's namespaced storage.
 
 It does not request `native.mpv.read`, `native.mpv.raw`, `unsafe.dom`,
 `invoke`, window handles, or access to the internal `<video>` element. No
@@ -45,6 +48,14 @@ It does not request `native.mpv.read`, `native.mpv.raw`, `unsafe.dom`,
 5. Install and enable the plugin, then restart Noir Player if requested.
 
 The prompt appears when a video with a saved position is played again.
+
+## Notification duration
+
+Open the Noir Player settings/style menu and use the **Resume Play** section to
+choose how long the floating notification remains visible: 1, 3, 5, 8, 10,
+15, 30, or 60 seconds. Five seconds is selected by default. The choice is
+stored in the plugin's namespaced storage and is restored when Noir Player
+restarts.
 
 ## Development
 

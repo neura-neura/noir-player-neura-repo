@@ -5,6 +5,7 @@ import type { PlayerSnapshot } from '@noir-player/plugin-api';
 import plugin, {
   buildMediaKey,
   formatResumeTime,
+  normalizePromptDurationSeconds,
   parseResumePlayConfig,
 } from '../src/index';
 
@@ -226,17 +227,62 @@ describe('Resume Play Noir Player plugin', () => {
     expect(buildMediaKey({ sourceKind: 'unsupported', displayName: 'video' })).toBeUndefined();
     expect(formatResumeTime(3723.9)).toBe('1:02:03');
     expect(formatResumeTime(83.4)).toBe('1:23');
+    expect(normalizePromptDurationSeconds('5')).toBe(5);
+    expect(normalizePromptDurationSeconds(15)).toBe(15);
+    expect(normalizePromptDurationSeconds(7)).toBeUndefined();
+    expect(normalizePromptDurationSeconds(5.5)).toBeUndefined();
+  });
+
+  it('persists the notification duration and uses five seconds by default', async () => {
+    const testContext = createContext();
+    const media = createMedia('Custom duration.mkv');
+    const mediaKey = buildMediaKey(media) as string;
+    testContext.stored.set('resumePositions', {
+      [mediaKey]: { position: 42.25, duration: 120, updatedAt: 1 },
+    });
+    const instance = await plugin.setup(testContext.context, plugin.defaultConfig);
+
+    expect(instance.api?.getState().promptDurationSeconds).toBe(5);
+    expect(instance.api?.setPromptDuration('15')).toBe(true);
+    expect(instance.api?.getState().promptDurationSeconds).toBe(15);
+    expect(testContext.stored.get('promptDurationSeconds')).toBe(15);
+    expect(instance.api?.setPromptDuration(7)).toBe(false);
+    expect(instance.api?.getState().promptDurationSeconds).toBe(15);
+
+    testContext.setSnapshot(createSnapshot(media, 'duration-session', 'ready'));
+    await instance.start?.();
+    testContext.emit('media:opening', {
+      sessionId: 'duration-session',
+      displayName: media.displayName,
+      kind: media.sourceKind,
+    }, 'duration-session');
+
+    expect(instance.api?.getState().prompt?.position).toBe(42.25);
+    expect(instance.api?.getState().promptRemainingMs).toBe(15_000);
+
+    await instance.dispose?.();
+    const restarted = await plugin.setup(testContext.context, plugin.defaultConfig);
+    expect(restarted.api?.getState().promptDurationSeconds).toBe(15);
+    await restarted.dispose?.();
   });
 
   it('persists positions and lets the user resume or start over', async () => {
     const testContext = createContext();
     const instance = await plugin.setup(testContext.context, plugin.defaultConfig);
 
-    expect(testContext.contributions).toHaveLength(1);
-    expect(testContext.contributions[0]).toMatchObject({
-      id: 'namespace.resume-play/prompt',
-      slot: 'notifications',
-    });
+    expect(testContext.contributions).toHaveLength(2);
+    expect(testContext.contributions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'namespace.resume-play/prompt',
+          slot: 'notifications',
+        }),
+        expect.objectContaining({
+          id: 'namespace.resume-play/settings',
+          slot: 'settings.sections',
+        }),
+      ]),
+    );
 
     await instance.start?.();
     await instance.start?.();
@@ -272,6 +318,7 @@ describe('Resume Play Noir Player plugin', () => {
       kind: media.sourceKind,
     }, 'session-2');
     expect(instance.api?.getState().prompt?.position).toBe(42.25);
+    expect(instance.api?.getState().promptDurationSeconds).toBe(5);
     expect(instance.api?.getState().promptRemainingMs).toBe(5000);
     // The host emits this bootstrap event before media:ready. It must not
     // erase the position that the ready event is about to offer.

@@ -1,4 +1,4 @@
-import { createElement } from 'react';
+import { createElement, type ChangeEvent } from 'react';
 import {
   definePlugin,
   type NoirPluginContext,
@@ -25,6 +25,7 @@ export interface ResumePlayState {
   readonly enabled: boolean;
   readonly currentMediaKey: string | null;
   readonly prompt: ResumePrompt | null;
+  readonly promptDurationSeconds: number;
   readonly promptRemainingMs: number;
 }
 
@@ -32,15 +33,32 @@ export interface ResumePlayApi {
   readonly getState: () => Readonly<ResumePlayState>;
   readonly resume: () => Promise<boolean>;
   readonly startOver: () => Promise<boolean>;
+  readonly setPromptDuration: (input: unknown) => boolean;
 }
 
 export const PLUGIN_ID = 'namespace.resume-play' as const;
 const STORAGE_KEY = 'resumePositions';
+const PROMPT_DURATION_STORAGE_KEY = 'promptDurationSeconds';
 const MIN_RESUME_SECONDS = 5;
 const COMPLETION_EPSILON_SECONDS = 3;
 const MAX_STORED_POSITIONS = 500;
-const PROMPT_TIMEOUT_MS = 5_000;
+const DEFAULT_PROMPT_DURATION_SECONDS = 5;
+const PROMPT_DURATION_OPTIONS = [1, 3, 5, 8, 10, 15, 30, 60] as const;
 const PROMPT_TICK_MS = 200;
+
+export function normalizePromptDurationSeconds(input: unknown): number | undefined {
+  const value =
+    typeof input === 'number'
+      ? input
+      : typeof input === 'string' && input.trim()
+        ? Number(input)
+        : Number.NaN;
+
+  if (!Number.isInteger(value)) return undefined;
+  return PROMPT_DURATION_OPTIONS.some((option) => option === value)
+    ? value
+    : undefined;
+}
 
 const manifest = {
   id: PLUGIN_ID,
@@ -229,12 +247,14 @@ class ResumePlayController {
   private readonly listeners = new Set<StateListener>();
   private readonly positions: StoredResumePositions;
   private config: ResumePlayConfig;
+  private promptDurationSeconds: number;
   private activeMedia: ActiveMedia | null = null;
   private pendingPrompt: ResumePrompt | null = null;
   private resumeCandidate: StoredResumePosition | null = null;
   private bypassPrompt: PendingPlayBypass | null = null;
   private uiAvailable = false;
   private uiRefresh: UiRefresh | null = null;
+  private settingsUiRefresh: UiRefresh | null = null;
   private promptTimer: ReturnType<typeof setInterval> | null = null;
   private promptExpiresAt: number | null = null;
   private promptRemainingMs = 0;
@@ -248,6 +268,7 @@ class ResumePlayController {
   ) {
     this.config = config;
     this.positions = this.readPositions();
+    this.promptDurationSeconds = this.readPromptDuration();
     this._state = this.buildState();
   }
 
@@ -279,6 +300,10 @@ class ResumePlayController {
     this.uiRefresh = refresh;
   }
 
+  setSettingsUiRefresh(refresh: UiRefresh | null): void {
+    this.settingsUiRefresh = refresh;
+  }
+
   start(): void {
     if (this.disposed || this.running) return;
     this.running = true;
@@ -299,6 +324,8 @@ class ResumePlayController {
     if (!next.enabled) {
       this.resumeCandidate = null;
       this.setPendingPrompt(null);
+      this.emitState();
+      this.refreshSettingsUi();
       return;
     }
     if (this.activeMedia) {
@@ -306,6 +333,7 @@ class ResumePlayController {
     }
     this.offerResumeIfAvailable();
     this.emitState();
+    this.refreshSettingsUi();
   }
 
   beforePlay(snapshot: Readonly<PlayerSnapshot>): { decision: 'allow' | 'cancel' } {
@@ -530,6 +558,21 @@ class ResumePlayController {
     }
   }
 
+  setPromptDuration(input: unknown): boolean {
+    if (this.disposed) return false;
+
+    const duration = normalizePromptDurationSeconds(input);
+    if (duration === undefined) return false;
+
+    this.promptDurationSeconds = duration;
+    this.persistPromptDuration();
+    if (this.pendingPrompt) this.startPromptTimer();
+    this.emitState();
+    this.refreshSettingsUi();
+
+    return true;
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.stopPromptTimer();
@@ -547,6 +590,7 @@ class ResumePlayController {
       enabled: this.config.enabled,
       currentMediaKey: this.activeMedia?.key ?? null,
       prompt: this.pendingPrompt,
+      promptDurationSeconds: this.promptDurationSeconds,
       promptRemainingMs: this.promptRemainingMs,
     });
   }
@@ -568,6 +612,16 @@ class ResumePlayController {
       this.uiRefresh?.();
     } catch (error) {
       this.context.logger.warn('A Resume Play UI refresh failed.', {
+        error: error instanceof Error ? error.message : 'unknown error',
+      });
+    }
+  }
+
+  private refreshSettingsUi(): void {
+    try {
+      this.settingsUiRefresh?.();
+    } catch (error) {
+      this.context.logger.warn('A Resume Play settings refresh failed.', {
         error: error instanceof Error ? error.message : 'unknown error',
       });
     }
@@ -596,8 +650,9 @@ class ResumePlayController {
 
   private startPromptTimer(): void {
     this.stopPromptTimer();
-    this.promptExpiresAt = Date.now() + PROMPT_TIMEOUT_MS;
-    this.promptRemainingMs = PROMPT_TIMEOUT_MS;
+    const promptDurationMs = this.promptDurationSeconds * 1000;
+    this.promptExpiresAt = Date.now() + promptDurationMs;
+    this.promptRemainingMs = promptDurationMs;
     this.promptTimer = setInterval(() => {
       if (!this.pendingPrompt || this.promptExpiresAt === null) {
         this.stopPromptTimer();
@@ -790,6 +845,46 @@ class ResumePlayController {
     }
   }
 
+  private readPromptDuration(): number {
+    if (!this.context.hasCapability('storage')) {
+      return DEFAULT_PROMPT_DURATION_SECONDS;
+    }
+
+    try {
+      return (
+        normalizePromptDurationSeconds(
+          this.context.storage.get(PROMPT_DURATION_STORAGE_KEY),
+        ) ?? DEFAULT_PROMPT_DURATION_SECONDS
+      );
+    } catch (error) {
+      this.context.logger.warn('Unable to read Resume Play notification duration.', {
+        storageKey: PROMPT_DURATION_STORAGE_KEY,
+      });
+      this.context.logger.debug('Resume Play duration read error details.', {
+        error: error instanceof Error ? error.message : 'unknown error',
+      });
+      return DEFAULT_PROMPT_DURATION_SECONDS;
+    }
+  }
+
+  private persistPromptDuration(): void {
+    if (!this.context.hasCapability('storage')) return;
+
+    try {
+      this.context.storage.set(
+        PROMPT_DURATION_STORAGE_KEY,
+        this.promptDurationSeconds,
+      );
+    } catch (error) {
+      this.context.logger.warn('Unable to persist Resume Play notification duration.', {
+        storageKey: PROMPT_DURATION_STORAGE_KEY,
+      });
+      this.context.logger.debug('Resume Play duration persistence error details.', {
+        error: error instanceof Error ? error.message : 'unknown error',
+      });
+    }
+  }
+
   private persistPositions(): void {
     if (!this.context.hasCapability('storage')) return;
 
@@ -860,12 +955,13 @@ function ResumePlayPrompt({
   const prompt = state.prompt;
   const percentage =
     prompt.percentage === null ? '' : ` (${Math.round(prompt.percentage)}% complete)`;
+  const promptDurationMs = state.promptDurationSeconds * 1000;
   const remainingMs = Math.max(
     0,
-    Math.min(PROMPT_TIMEOUT_MS, state.promptRemainingMs),
+    Math.min(promptDurationMs, state.promptRemainingMs),
   );
   const progressPercent = Math.round(
-    (remainingMs / PROMPT_TIMEOUT_MS) * 100,
+    (remainingMs / promptDurationMs) * 100,
   );
   const secondsRemaining = Math.max(1, Math.ceil(remainingMs / 1000));
   const notificationStyle = {
@@ -1005,7 +1101,7 @@ function ResumePlayPrompt({
         role: 'progressbar',
         'aria-label': 'Resume prompt time remaining',
         'aria-valuemin': 0,
-        'aria-valuemax': PROMPT_TIMEOUT_MS,
+        'aria-valuemax': promptDurationMs,
         'aria-valuenow': remainingMs,
         'aria-valuetext': `${secondsRemaining} seconds remaining`,
         style: {
@@ -1030,6 +1126,56 @@ function ResumePlayPrompt({
   );
 }
 
+function ResumePlaySettings({
+  controller,
+}: PluginSlotProps & { readonly controller: ResumePlayController }) {
+  const state = controller.state;
+
+  return createElement(
+    'section',
+    {
+      className: 'plugin-settings-section',
+      'aria-labelledby': 'resume-play-settings-title',
+      'data-plugin-settings': PLUGIN_ID,
+    },
+    createElement('h3', { id: 'resume-play-settings-title' }, 'Resume Play'),
+    createElement(
+      'label',
+      { className: 'settings-item' },
+      createElement('span', null, 'Notification duration'),
+      createElement(
+        'span',
+        { className: 'settings-item-content' },
+        createElement(
+          'select',
+          {
+            className: 'text-input',
+            value: String(state.promptDurationSeconds),
+            disabled: !state.enabled,
+            'aria-label': 'Resume Play notification duration',
+            onChange: (event: ChangeEvent<HTMLSelectElement>) =>
+              controller.setPromptDuration(event.currentTarget.value),
+          },
+          ...PROMPT_DURATION_OPTIONS.map((seconds) =>
+            createElement(
+              'option',
+              { key: seconds, value: String(seconds) },
+              `${seconds} second${seconds === 1 ? '' : 's'}`,
+            ),
+          ),
+        ),
+      ),
+    ),
+    createElement(
+      'p',
+      { className: 'helper-text' },
+      state.enabled
+        ? 'Choose how long the floating notification stays visible. The choice is remembered when Noir Player restarts.'
+        : 'This plugin is disabled by its configuration.',
+    ),
+  );
+}
+
 const plugin = definePlugin<ResumePlayConfig, ResumePlayApi>({
   manifest,
   defaultConfig: {
@@ -1042,6 +1188,7 @@ const plugin = definePlugin<ResumePlayConfig, ResumePlayApi>({
 
     if (context.hasCapability('ui.contribute')) {
       let promptDisposable: (() => void) | undefined;
+      let settingsDisposable: (() => void) | undefined;
       const promptContribution = {
         id: `${PLUGIN_ID}/prompt`,
         slot: 'notifications' as const,
@@ -1050,18 +1197,35 @@ const plugin = definePlugin<ResumePlayConfig, ResumePlayApi>({
         component: (props: PluginSlotProps) =>
           createElement(ResumePlayPrompt, { ...props, controller }),
       } as UiContribution;
+      const settingsContribution = {
+        id: `${PLUGIN_ID}/settings`,
+        slot: 'settings.sections' as const,
+        order: 60,
+        ariaLabel: 'Resume Play settings',
+        component: (props: PluginSlotProps) =>
+          createElement(ResumePlaySettings, { ...props, controller }),
+      } as UiContribution;
       const refreshPromptContribution = () => {
         promptDisposable?.();
         promptDisposable = context.ui.contribute(promptContribution);
       };
+      const refreshSettingsContribution = () => {
+        settingsDisposable?.();
+        settingsDisposable = context.ui.contribute(settingsContribution);
+      };
 
       try {
         controller.setUiRefresh(refreshPromptContribution);
+        controller.setSettingsUiRefresh(refreshSettingsContribution);
         refreshPromptContribution();
+        refreshSettingsContribution();
         context.resources.add(() => {
           controller.setUiRefresh(null);
+          controller.setSettingsUiRefresh(null);
           promptDisposable?.();
+          settingsDisposable?.();
           promptDisposable = undefined;
+          settingsDisposable = undefined;
         });
         controller.setUiAvailable(true);
       } catch (error) {
@@ -1127,6 +1291,7 @@ const plugin = definePlugin<ResumePlayConfig, ResumePlayApi>({
         getState: () => controller.state,
         resume: () => controller.resume(),
         startOver: () => controller.startOver(),
+        setPromptDuration: (input) => controller.setPromptDuration(input),
       },
       start() {
         controller.start();

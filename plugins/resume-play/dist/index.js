@@ -58,7 +58,21 @@ function r(e) {
 }
 //#endregion
 //#region plugins/resume-play/src/index.ts
-var i = "namespace.resume-play", a = "resumePositions", o = 5, s = 3, c = 500, l = 5e3, u = 200, d = {
+var i = "namespace.resume-play", a = "resumePositions", o = "promptDurationSeconds", s = 5, c = 3, l = 500, u = 5, d = [
+	1,
+	3,
+	5,
+	8,
+	10,
+	15,
+	30,
+	60
+], f = 200;
+function p(e) {
+	let t = typeof e == "number" ? e : typeof e == "string" && e.trim() ? Number(e) : NaN;
+	if (Number.isInteger(t)) return d.some((e) => e === t) ? t : void 0;
+}
+var m = {
 	id: i,
 	name: "Resume Play",
 	version: "0.1.0",
@@ -76,29 +90,29 @@ var i = "namespace.resume-play", a = "resumePositions", o = 5, s = 3, c = 500, l
 		"storage"
 	]
 };
-function f(e) {
+function h(e) {
 	return e === "local-file" || e === "object-url" || e === "hls";
 }
-function p(e) {
+function g(e) {
 	if (!e || typeof e != "object" || Array.isArray(e)) return;
 	let t = e, n = t.sourceKind, r = typeof t.displayName == "string" ? t.displayName.trim() : "";
-	if (!(!f(n) || !r)) return JSON.stringify({
+	if (!(!h(n) || !r)) return JSON.stringify({
 		sourceKind: n,
 		displayName: r
 	});
 }
-function m(e) {
+function _(e) {
 	if (!Number.isFinite(e) || e < 0) return "0:00";
 	let t = Math.floor(e), n = t % 60, r = Math.floor(t / 60), i = r % 60, a = Math.floor(r / 60), o = String(n).padStart(2, "0");
 	return a > 0 ? `${a}:${String(i).padStart(2, "0")}:${o}` : `${i}:${o}`;
 }
-function h(e) {
+function v(e) {
 	if (!e || typeof e != "object" || Array.isArray(e)) throw TypeError("Resume Play config must be an object.");
 	let t = e.enabled;
 	if (typeof t != "boolean") throw TypeError("Resume Play config enabled must be a boolean.");
 	return Object.freeze({ enabled: t });
 }
-function g(e) {
+function y(e) {
 	if (!e || typeof e != "object" || Array.isArray(e)) return {};
 	let t = {};
 	for (let [n, r] of Object.entries(e)) {
@@ -112,10 +126,10 @@ function g(e) {
 	}
 	return t;
 }
-function _(e, t, n = {}) {
-	if (!t || t.position < o) return null;
+function b(e, t, n = {}) {
+	if (!t || t.position < s) return null;
 	let r = e.duration ?? t.duration;
-	if (r !== null && (!Number.isFinite(r) || r <= 0 || t.position >= r - s) || !n.allowPastPosition && t.position <= e.currentTime + s) return null;
+	if (r !== null && (!Number.isFinite(r) || r <= 0 || t.position >= r - c) || !n.allowPastPosition && t.position <= e.currentTime + c) return null;
 	let i = r !== null && r > 0 ? Math.min(100, Math.max(0, t.position / r * 100)) : null;
 	return Object.freeze({
 		mediaKey: e.key,
@@ -125,17 +139,19 @@ function _(e, t, n = {}) {
 		percentage: i
 	});
 }
-var v = class {
+var x = class {
 	context;
 	listeners = /* @__PURE__ */ new Set();
 	positions;
 	config;
+	promptDurationSeconds;
 	activeMedia = null;
 	pendingPrompt = null;
 	resumeCandidate = null;
 	bypassPrompt = null;
 	uiAvailable = !1;
 	uiRefresh = null;
+	settingsUiRefresh = null;
 	promptTimer = null;
 	promptExpiresAt = null;
 	promptRemainingMs = 0;
@@ -143,7 +159,7 @@ var v = class {
 	disposed = !1;
 	_state;
 	constructor(e, t) {
-		this.context = e, this.config = t, this.positions = this.readPositions(), this._state = this.buildState();
+		this.context = e, this.config = t, this.positions = this.readPositions(), this.promptDurationSeconds = this.readPromptDuration(), this._state = this.buildState();
 	}
 	get state() {
 		return this._state;
@@ -161,6 +177,9 @@ var v = class {
 	setUiRefresh(e) {
 		this.uiRefresh = e;
 	}
+	setSettingsUiRefresh(e) {
+		this.settingsUiRefresh = e;
+	}
 	start() {
 		this.disposed || this.running || (this.running = !0, this.refreshSnapshot(), this.offerResumeIfAvailable());
 	}
@@ -170,10 +189,10 @@ var v = class {
 	applyConfig(e) {
 		if (!this.disposed) {
 			if (this.config = e, !e.enabled) {
-				this.resumeCandidate = null, this.setPendingPrompt(null);
+				this.resumeCandidate = null, this.setPendingPrompt(null), this.emitState(), this.refreshSettingsUi();
 				return;
 			}
-			this.activeMedia && (this.resumeCandidate = this.positions[this.activeMedia.key] ?? null), this.offerResumeIfAvailable(), this.emitState();
+			this.activeMedia && (this.resumeCandidate = this.positions[this.activeMedia.key] ?? null), this.offerResumeIfAvailable(), this.emitState(), this.refreshSettingsUi();
 		}
 	}
 	beforePlay(e) {
@@ -181,12 +200,12 @@ var v = class {
 		let t = this.activateFromSnapshot(e);
 		if (!t) return { decision: "allow" };
 		if (this.matchesBypass(t)) return this.bypassPrompt = null, { decision: "allow" };
-		let n = this.pendingPrompt?.mediaKey === t.key ? this.pendingPrompt : _(t, this.resumeCandidate ?? this.positions[t.key], { allowPastPosition: this.resumeCandidate !== null });
+		let n = this.pendingPrompt?.mediaKey === t.key ? this.pendingPrompt : b(t, this.resumeCandidate ?? this.positions[t.key], { allowPastPosition: this.resumeCandidate !== null });
 		return n ? (this.setPendingPrompt(n), { decision: "cancel" }) : { decision: "allow" };
 	}
 	onOpening(e) {
-		if (this.disposed || !f(e.payload.kind)) return;
-		let t = p({
+		if (this.disposed || !h(e.payload.kind)) return;
+		let t = g({
 			sourceKind: e.payload.kind,
 			displayName: e.payload.displayName
 		});
@@ -272,6 +291,11 @@ var v = class {
 			return this.bypassPrompt = null, this.resumeCandidate = n, t && (this.positions[e.mediaKey] = t), this.persistPositions(), this.setPendingPrompt(e), this.logCommandFailure("start over", r), !1;
 		}
 	}
+	setPromptDuration(e) {
+		if (this.disposed) return !1;
+		let t = p(e);
+		return t !== void 0 && (this.promptDurationSeconds = t, this.persistPromptDuration(), this.pendingPrompt && this.startPromptTimer(), this.emitState(), this.refreshSettingsUi(), !0);
+	}
 	dispose() {
 		this.disposed || (this.stopPromptTimer(), this.running = !1, this.disposed = !0, this.resumeCandidate = null, this.bypassPrompt = null, this.pendingPrompt = null, this.listeners.clear(), this.emitState());
 	}
@@ -280,6 +304,7 @@ var v = class {
 			enabled: this.config.enabled,
 			currentMediaKey: this.activeMedia?.key ?? null,
 			prompt: this.pendingPrompt,
+			promptDurationSeconds: this.promptDurationSeconds,
 			promptRemainingMs: this.promptRemainingMs
 		});
 	}
@@ -298,11 +323,20 @@ var v = class {
 			}
 		}
 	}
+	refreshSettingsUi() {
+		try {
+			this.settingsUiRefresh?.();
+		} catch (e) {
+			this.context.logger.warn("A Resume Play settings refresh failed.", { error: e instanceof Error ? e.message : "unknown error" });
+		}
+	}
 	setPendingPrompt(e) {
 		this.disposed || this.pendingPrompt === e || this.pendingPrompt !== null && e !== null && this.pendingPrompt.mediaKey === e.mediaKey && this.pendingPrompt.position === e.position && this.pendingPrompt.duration === e.duration || (this.pendingPrompt = e, e ? this.startPromptTimer() : this.stopPromptTimer(), this.emitState());
 	}
 	startPromptTimer() {
-		this.stopPromptTimer(), this.promptExpiresAt = Date.now() + l, this.promptRemainingMs = l, this.promptTimer = setInterval(() => {
+		this.stopPromptTimer();
+		let e = this.promptDurationSeconds * 1e3;
+		this.promptExpiresAt = Date.now() + e, this.promptRemainingMs = e, this.promptTimer = setInterval(() => {
 			if (!this.pendingPrompt || this.promptExpiresAt === null) {
 				this.stopPromptTimer();
 				return;
@@ -317,7 +351,7 @@ var v = class {
 				return;
 			}
 			e !== this.promptRemainingMs && (this.promptRemainingMs = e, this.emitState());
-		}, u);
+		}, f);
 	}
 	stopPromptTimer() {
 		this.promptTimer !== null && (clearInterval(this.promptTimer), this.promptTimer = null), this.promptExpiresAt = null, this.promptRemainingMs = 0;
@@ -333,7 +367,7 @@ var v = class {
 		return e.media ? (this.handleMediaSnapshot(e.media, e.sessionId), this.activeMedia) : null;
 	}
 	handleMediaSnapshot(e, t) {
-		let n = p(e);
+		let n = g(e);
 		if (!n) {
 			this.clearActiveMedia();
 			return;
@@ -356,17 +390,17 @@ var v = class {
 	}
 	offerResumeIfAvailable() {
 		if (!this.running || !this.config.enabled || !this.uiAvailable || !this.activeMedia) return;
-		let e = _(this.activeMedia, this.resumeCandidate ?? void 0, { allowPastPosition: !0 });
+		let e = b(this.activeMedia, this.resumeCandidate ?? void 0, { allowPastPosition: !0 });
 		e && this.setPendingPrompt(e);
 	}
 	savePosition(e, t) {
-		if (!this.activeMedia || !Number.isFinite(e) || e < 0 || e < o && this.hasStoredResumePosition()) return;
+		if (!this.activeMedia || !Number.isFinite(e) || e < 0 || e < s && this.hasStoredResumePosition()) return;
 		let n = typeof t == "number" && Number.isFinite(t) && t > 0 ? t : this.activeMedia.duration;
-		if (n !== null && e >= n - s) {
+		if (n !== null && e >= n - c) {
 			this.removePosition(this.activeMedia.key);
 			return;
 		}
-		if (e < o) {
+		if (e < s) {
 			this.removePosition(this.activeMedia.key);
 			return;
 		}
@@ -379,21 +413,36 @@ var v = class {
 	hasStoredResumePosition() {
 		if (!this.activeMedia) return !1;
 		let e = this.positions[this.activeMedia.key];
-		return !!(e && e.position >= o);
+		return !!(e && e.position >= s);
 	}
 	removePosition(e) {
 		Object.prototype.hasOwnProperty.call(this.positions, e) && (delete this.positions[e], this.persistPositions());
 	}
 	trimPositions() {
 		let e = Object.entries(this.positions);
-		e.length <= c || e.sort(([, e], [, t]) => e.updatedAt - t.updatedAt).slice(0, e.length - c).forEach(([e]) => delete this.positions[e]);
+		e.length <= l || e.sort(([, e], [, t]) => e.updatedAt - t.updatedAt).slice(0, e.length - l).forEach(([e]) => delete this.positions[e]);
 	}
 	readPositions() {
 		if (!this.context.hasCapability("storage")) return {};
 		try {
-			return g(this.context.storage.get(a));
+			return y(this.context.storage.get(a));
 		} catch (e) {
 			return this.context.logger.warn("Unable to read Resume Play positions.", { error: e instanceof Error ? e.message : "unknown error" }), {};
+		}
+	}
+	readPromptDuration() {
+		if (!this.context.hasCapability("storage")) return u;
+		try {
+			return p(this.context.storage.get(o)) ?? u;
+		} catch (e) {
+			return this.context.logger.warn("Unable to read Resume Play notification duration.", { storageKey: o }), this.context.logger.debug("Resume Play duration read error details.", { error: e instanceof Error ? e.message : "unknown error" }), u;
+		}
+	}
+	persistPromptDuration() {
+		if (this.context.hasCapability("storage")) try {
+			this.context.storage.set(o, this.promptDurationSeconds);
+		} catch (e) {
+			this.context.logger.warn("Unable to persist Resume Play notification duration.", { storageKey: o }), this.context.logger.debug("Resume Play duration persistence error details.", { error: e instanceof Error ? e.message : "unknown error" });
 		}
 	}
 	persistPositions() {
@@ -422,10 +471,10 @@ var v = class {
 		this.context.logger.warn(`Unable to ${e} in Resume Play.`, { error: t instanceof Error ? t.message : "unknown error" });
 	}
 };
-function y({ controller: e }) {
+function S({ controller: e }) {
 	let t = e.state;
 	if (!t.enabled || !t.prompt) return null;
-	let r = t.prompt, i = r.percentage === null ? "" : ` (${Math.round(r.percentage)}% complete)`, a = Math.max(0, Math.min(l, t.promptRemainingMs)), o = Math.round(a / l * 100), s = Math.max(1, Math.ceil(a / 1e3)), c = {
+	let r = t.prompt, i = r.percentage === null ? "" : ` (${Math.round(r.percentage)}% complete)`, a = t.promptDurationSeconds * 1e3, o = Math.max(0, Math.min(a, t.promptRemainingMs)), s = Math.round(o / a * 100), c = Math.max(1, Math.ceil(o / 1e3)), l = {
 		position: "fixed",
 		top: "84px",
 		right: "24px",
@@ -454,7 +503,7 @@ function y({ controller: e }) {
 		"aria-labelledby": "resume-play-notification-title",
 		"aria-describedby": "resume-play-notification-description",
 		"aria-live": "polite",
-		style: c
+		style: l
 	}, (0, n.createElement)("div", { style: {
 		display: "flex",
 		alignItems: "center",
@@ -469,7 +518,7 @@ function y({ controller: e }) {
 			letterSpacing: "0.02em"
 		}
 	}, "Resume Play"), (0, n.createElement)("span", {
-		"aria-label": `${s} seconds remaining`,
+		"aria-label": `${c} seconds remaining`,
 		style: {
 			flex: "0 0 auto",
 			minWidth: "40px",
@@ -481,7 +530,7 @@ function y({ controller: e }) {
 			fontVariantNumeric: "tabular-nums",
 			textAlign: "center"
 		}
-	}, `${s}s`)), (0, n.createElement)("p", {
+	}, `${c}s`)), (0, n.createElement)("p", {
 		id: "resume-play-notification-description",
 		style: {
 			margin: "12px 0 14px",
@@ -490,7 +539,7 @@ function y({ controller: e }) {
 			lineHeight: 1.45,
 			overflowWrap: "anywhere"
 		}
-	}, `Continue "${r.displayName}" from ${m(r.position)}${i}?`), (0, n.createElement)("div", { style: {
+	}, `Continue "${r.displayName}" from ${_(r.position)}${i}?`), (0, n.createElement)("div", { style: {
 		display: "grid",
 		gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
 		gap: "8px"
@@ -517,9 +566,9 @@ function y({ controller: e }) {
 		role: "progressbar",
 		"aria-label": "Resume prompt time remaining",
 		"aria-valuemin": 0,
-		"aria-valuemax": l,
-		"aria-valuenow": a,
-		"aria-valuetext": `${s} seconds remaining`,
+		"aria-valuemax": a,
+		"aria-valuenow": o,
+		"aria-valuetext": `${c} seconds remaining`,
 		style: {
 			height: "4px",
 			marginTop: "14px",
@@ -530,7 +579,7 @@ function y({ controller: e }) {
 	}, (0, n.createElement)("div", {
 		"aria-hidden": "true",
 		style: {
-			width: `${o}%`,
+			width: `${s}%`,
 			height: "100%",
 			borderRadius: "inherit",
 			background: "linear-gradient(90deg, #39a7ff, #6fe1ff)",
@@ -538,28 +587,56 @@ function y({ controller: e }) {
 		}
 	})));
 }
-var b = r({
-	manifest: d,
+function C({ controller: e }) {
+	let t = e.state;
+	return (0, n.createElement)("section", {
+		className: "plugin-settings-section",
+		"aria-labelledby": "resume-play-settings-title",
+		"data-plugin-settings": i
+	}, (0, n.createElement)("h3", { id: "resume-play-settings-title" }, "Resume Play"), (0, n.createElement)("label", { className: "settings-item" }, (0, n.createElement)("span", null, "Notification duration"), (0, n.createElement)("span", { className: "settings-item-content" }, (0, n.createElement)("select", {
+		className: "text-input",
+		value: String(t.promptDurationSeconds),
+		disabled: !t.enabled,
+		"aria-label": "Resume Play notification duration",
+		onChange: (t) => e.setPromptDuration(t.currentTarget.value)
+	}, ...d.map((e) => (0, n.createElement)("option", {
+		key: e,
+		value: String(e)
+	}, `${e} second${e === 1 ? "" : "s"}`))))), (0, n.createElement)("p", { className: "helper-text" }, t.enabled ? "Choose how long the floating notification stays visible. The choice is remembered when Noir Player restarts." : "This plugin is disabled by its configuration."));
+}
+var w = r({
+	manifest: m,
 	defaultConfig: { enabled: !0 },
-	config: { parse: h },
+	config: { parse: v },
 	setup(e, t) {
-		let r = new v(e, t);
+		let r = new x(e, t);
 		if (e.resources.add(() => r.dispose()), e.hasCapability("ui.contribute")) {
-			let t, a = {
+			let t, a, o = {
 				id: `${i}/prompt`,
 				slot: "notifications",
 				order: 10,
 				ariaLabel: "Resume Play",
-				component: (e) => (0, n.createElement)(y, {
+				component: (e) => (0, n.createElement)(S, {
 					...e,
 					controller: r
 				})
-			}, o = () => {
-				t?.(), t = e.ui.contribute(a);
+			}, s = {
+				id: `${i}/settings`,
+				slot: "settings.sections",
+				order: 60,
+				ariaLabel: "Resume Play settings",
+				component: (e) => (0, n.createElement)(C, {
+					...e,
+					controller: r
+				})
+			}, c = () => {
+				t?.(), t = e.ui.contribute(o);
+			}, l = () => {
+				a?.(), a = e.ui.contribute(s);
 			};
 			try {
-				r.setUiRefresh(o), o(), e.resources.add(() => {
-					r.setUiRefresh(null), t?.(), t = void 0;
+				r.setUiRefresh(c), r.setSettingsUiRefresh(l), c(), l(), e.resources.add(() => {
+					r.setUiRefresh(null), r.setSettingsUiRefresh(null), t?.(), a?.(), t = void 0, a = void 0;
 				}), r.setUiAvailable(!0);
 			} catch (t) {
 				r.setUiRefresh(null), e.logger.warn("Unable to register the Resume Play prompt.", { error: t instanceof Error ? t.message : "unknown error" });
@@ -575,7 +652,8 @@ var b = r({
 			api: {
 				getState: () => r.state,
 				resume: () => r.resume(),
-				startOver: () => r.startOver()
+				startOver: () => r.startOver(),
+				setPromptDuration: (e) => r.setPromptDuration(e)
 			},
 			start() {
 				r.start();
@@ -593,4 +671,4 @@ var b = r({
 	}
 });
 //#endregion
-export { i as PLUGIN_ID, p as buildMediaKey, b as default, m as formatResumeTime, h as parseResumePlayConfig };
+export { i as PLUGIN_ID, g as buildMediaKey, w as default, _ as formatResumeTime, p as normalizePromptDurationSeconds, v as parseResumePlayConfig };
