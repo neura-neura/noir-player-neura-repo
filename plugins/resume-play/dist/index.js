@@ -319,7 +319,7 @@ var g = class {
 		e && this.setPendingPrompt(e);
 	}
 	savePosition(e, t) {
-		if (!this.activeMedia || !Number.isFinite(e) || e < 0) return;
+		if (!this.activeMedia || !Number.isFinite(e) || e < 0 || e < o && this.hasStoredResumePosition()) return;
 		let n = typeof t == "number" && Number.isFinite(t) && t > 0 ? t : this.activeMedia.duration;
 		if (n !== null && e >= n - s) {
 			this.removePosition(this.activeMedia.key);
@@ -334,6 +334,11 @@ var g = class {
 			duration: n,
 			updatedAt: Date.now()
 		}), this.trimPositions(), this.persistPositions();
+	}
+	hasStoredResumePosition() {
+		if (!this.activeMedia) return !1;
+		let e = this.positions[this.activeMedia.key];
+		return !!(e && e.position >= o);
 	}
 	removePosition(e) {
 		Object.prototype.hasOwnProperty.call(this.positions, e) && (delete this.positions[e], this.persistPositions());

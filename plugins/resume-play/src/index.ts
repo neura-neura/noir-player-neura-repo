@@ -604,6 +604,13 @@ class ResumePlayController {
       return;
     }
 
+    // The host emits an initial media:time-update at 0 before media:ready.
+    // Preserve an existing resume point during that bootstrap event; an
+    // explicit Start over action deletes the record before issuing seekTo(0).
+    if (position < MIN_RESUME_SECONDS && this.hasStoredResumePosition()) {
+      return;
+    }
+
     const safeDuration =
       typeof duration === 'number' && Number.isFinite(duration) && duration > 0
         ? duration
@@ -629,6 +636,12 @@ class ResumePlayController {
     });
     this.trimPositions();
     this.persistPositions();
+  }
+
+  private hasStoredResumePosition(): boolean {
+    if (!this.activeMedia) return false;
+    const stored = this.positions[this.activeMedia.key];
+    return Boolean(stored && stored.position >= MIN_RESUME_SECONDS);
   }
 
   private removePosition(mediaKey: string): void {
