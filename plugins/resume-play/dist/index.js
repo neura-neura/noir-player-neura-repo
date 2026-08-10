@@ -58,7 +58,7 @@ function r(e) {
 }
 //#endregion
 //#region plugins/resume-play/src/index.ts
-var i = "namespace.resume-play", a = "resumePositions", o = "promptDurationSeconds", s = 5, c = 3, l = 500, u = 5, d = [
+var i = "neura-neura.resume-play", a = "resumePositions", o = "promptDurationSeconds", s = 5, c = 3, l = 500, u = 5, d = [
 	1,
 	3,
 	5,

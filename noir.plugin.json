@@ -1,6 +1,6 @@
 {
   "manifest": {
-    "id": "namespace.change-slider-color",
+    "id": "neura-neura.change-slider-color",
     "name": "Change Slider Color",
     "version": "0.1.0",
     "apiVersion": "^1.0.0",
@@ -22,5 +22,5 @@
     ]
   },
   "entry": "dist/index.js",
-  "integrity": "sha256:5272a38d5de20c09e67ee4c15eadf99f846e76b11a28494aabf790d27f905eba"
+  "integrity": "sha256:9e3a90df4076f72b51749b0bc6460af9d07d5a6dc9b17a3a1f7fcf2f5b007c5f"
 }

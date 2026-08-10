@@ -36,7 +36,7 @@ export interface ResumePlayApi {
   readonly setPromptDuration: (input: unknown) => boolean;
 }
 
-export const PLUGIN_ID = 'namespace.resume-play' as const;
+export const PLUGIN_ID = 'neura-neura.resume-play' as const;
 const STORAGE_KEY = 'resumePositions';
 const PROMPT_DURATION_STORAGE_KEY = 'promptDurationSeconds';
 const MIN_RESUME_SECONDS = 5;

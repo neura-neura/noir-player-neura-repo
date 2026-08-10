@@ -28,7 +28,7 @@ export interface ChangeSliderColorApi {
   readonly resetColor: () => boolean;
 }
 
-export const PLUGIN_ID = 'namespace.change-slider-color' as const;
+export const PLUGIN_ID = 'neura-neura.change-slider-color' as const;
 const STORAGE_COLOR_KEY = 'sliderColor';
 const DEFAULT_COLOR = '#39A7FF';
 
@@ -291,7 +291,7 @@ export function buildSliderColorStyles(input: unknown): string {
   }
 
   return `
-/* namespace.change-slider-color: public UI contribution for Noir Player sliders */
+/* neura-neura.change-slider-color: public UI contribution for Noir Player sliders */
 .native-progress,
 .native-volume {
   accent-color: ${color} !important;

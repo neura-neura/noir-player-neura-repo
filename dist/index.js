@@ -58,7 +58,7 @@ function r(e) {
 }
 //#endregion
 //#region src/index.ts
-var i = "namespace.change-slider-color", a = "sliderColor", o = "#39A7FF", s = {
+var i = "neura-neura.change-slider-color", a = "sliderColor", o = "#39A7FF", s = {
 	id: i,
 	name: "Change Slider Color",
 	version: "0.1.0",
@@ -198,7 +198,7 @@ function d(e) {
 	let t = c(e);
 	if (!t) throw TypeError("A valid hexadecimal slider color is required.");
 	return `
-/* namespace.change-slider-color: public UI contribution for Noir Player sliders */
+/* neura-neura.change-slider-color: public UI contribution for Noir Player sliders */
 .native-progress,
 .native-volume {
   accent-color: ${t} !important;

@@ -196,7 +196,7 @@ function createContext() {
 
 describe('Resume Play Noir Player plugin', () => {
   it('exports a synchronized manifest with minimal public capabilities', async () => {
-    expect(plugin.manifest.id).toBe('namespace.resume-play');
+    expect(plugin.manifest.id).toBe('neura-neura.resume-play');
     expect(plugin.manifest.name).toBe('Resume Play');
     expect(plugin.manifest.requestedCapabilities).toEqual([
       'player.read',
@@ -274,11 +274,11 @@ describe('Resume Play Noir Player plugin', () => {
     expect(testContext.contributions).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: 'namespace.resume-play/prompt',
+          id: 'neura-neura.resume-play/prompt',
           slot: 'notifications',
         }),
         expect.objectContaining({
-          id: 'namespace.resume-play/settings',
+          id: 'neura-neura.resume-play/settings',
           slot: 'settings.sections',
         }),
       ]),

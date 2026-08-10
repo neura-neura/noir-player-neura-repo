@@ -9,7 +9,7 @@ import plugin, {
 
 describe('Change Slider Color Noir Player plugin', () => {
   it('exports a compatible manifest with only required capabilities', () => {
-    expect(plugin.manifest.id).toBe('namespace.change-slider-color');
+    expect(plugin.manifest.id).toBe('neura-neura.change-slider-color');
     expect(plugin.manifest.apiVersion).toBe('^1.0.0');
     expect(plugin.manifest.repository).toBe(
       'https://github.com/neura-neura/noir-player-neura-repo',
@@ -113,7 +113,7 @@ describe('Change Slider Color Noir Player plugin', () => {
 
     const instance = await plugin.setup(context, plugin.defaultConfig);
     expect(contributions.map(({ id }) => id)).toEqual([
-      'namespace.change-slider-color/settings',
+      'neura-neura.change-slider-color/settings',
     ]);
     expect(instance.api?.getState().color).toBe('#39A7FF');
     await instance.start?.();
